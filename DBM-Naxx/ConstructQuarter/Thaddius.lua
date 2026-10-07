@@ -2,15 +2,16 @@
 local mod	= DBM:NewMod("Thaddius", "DBM-Naxx", 2)
 local L		= mod:GetLocalizedStrings()
 
-mod:SetRevision("20250929220131")
+mod:SetRevision("20221008164846")
 mod:SetCreatureID(15928)
-mod:SetEncounterID(1120)
 
 mod:RegisterCombat("combat_yell", L.Yell)
 
 mod:RegisterEventsInCombat(
 	"SPELL_CAST_START 28089",
-	"CHAT_MSG_RAID_BOSS_EMOTE",
+	"SPELL_CAST_SUCCESS 9250651",
+	"SPELL_AURA_APPLIED 45185",
+	"CHAT_MSG_MONSTER_YELL",
 	"UNIT_AURA player"
 )
 
@@ -21,12 +22,14 @@ local warnThrowSoon			= mod:NewSoonAnnounce(28338, 1)
 
 local warnChargeChanged		= mod:NewSpecialWarning("WarningChargeChanged", nil, nil, nil, 3, 2, nil, nil, 28089)
 local warnChargeNotChanged	= mod:NewSpecialWarning("WarningChargeNotChanged", false, nil, nil, 1, 12, nil, nil, 28089)
+local specWarnStomp			= mod:NewSpecialWarningTaunt(45185, nil, nil, nil, 1, 2)
 local yellShift				= mod:NewShortPosYell(28089, DBM_CORE_L.AUTO_YELL_CUSTOM_POSITION)
 
 local enrageTimer			= mod:NewBerserkTimer(365)
-local timerNextShift		= mod:NewNextTimer(30, 28089, nil, nil, nil, 2, nil, DBM_COMMON_L.DEADLY_ICON)
+local timerNextShift		= mod:NewNextTimer(20, 28089, nil, nil, nil, 2, nil, DBM_COMMON_L.DEADLY_ICON)
 local timerShiftCast		= mod:NewCastTimer(3, 28089, nil, nil, nil, 2)
-local timerThrow			= mod:NewNextTimer(20.6, 28338, nil, nil, nil, 5, nil, DBM_COMMON_L.TANK_ICON)
+local timerChainLightningCD	= mod:NewCDTimer(15, 9250651, nil, nil, nil, 3) -- Frostmourne custom, log 2026-10-06: every 15.0-15.1 in phase 2 (one 24s gap during Tesla Overload)
+local timerThrow			= mod:NewNextTimer(28, 28338, nil, nil, nil, 5, nil, DBM_COMMON_L.TANK_ICON)
 
 if not DBM.Options.GroupOptionsBySpell then
 	mod:AddMiscLine(DBM_CORE_L.OPTION_CATEGORY_DROPDOWNS)
@@ -39,7 +42,6 @@ mod:SetBossHealthInfo(
 )
 
 local currentCharge
-local down = 0
 
 local function TankThrow(self)
 	if not self:IsInCombat() or self.vb.phase == 2 then
@@ -47,28 +49,35 @@ local function TankThrow(self)
 		return
 	end
 	timerThrow:Start()
-	warnThrowSoon:Schedule(17.6)
-	self:Schedule(20.6, TankThrow, self)
+	warnThrowSoon:Schedule(23)
+	self:Schedule(28, TankThrow, self)
 end
 
 function mod:OnCombatStart(delay)
 	self:SetStage(1)
+	self.vb.noShift = false
 	currentCharge = nil
-	down = 0
-	self:Schedule(20.6 - delay, TankThrow, self)
-	timerThrow:Start(-delay)
-	warnThrowSoon:Schedule(17.6 - delay)
+	self:Schedule(25 - delay, TankThrow, self)
+	timerThrow:Start(25-delay)
+	warnThrowSoon:Schedule(20 - delay)
 end
 
 do
 	local lastShift
 	function mod:SPELL_CAST_START(args)
-		if args.spellId == 28089 then
+		if args.spellId == 28089 then -- Polarity Shift
 			self:SetStage(2)
-			timerNextShift:Start()
+			if self.vb.noShift then
+				-- after "Maximum power!" (heals to full) there are no more shifts: no timer
+			elseif self:IsDifficulty("normal25") then
+				timerNextShift:Start()
+				warnShiftSoon:Schedule(15)
+			else
+				timerNextShift:Start(30)
+				warnShiftSoon:Schedule(25)
+			end
 			timerShiftCast:Start()
 			warnShiftCasting:Show()
-			warnShiftSoon:Schedule(25)
 			lastShift = GetTime()
 		end
 	end
@@ -116,16 +125,44 @@ do
 	end
 end
 
-function mod:CHAT_MSG_RAID_BOSS_EMOTE(msg)
-	if msg:match(L.Emote) or msg:match(L.Emote2) or msg:find(L.Emote) or msg:find(L.Emote2) or msg == L.Emote or msg == L.Emote2 then
-		down = down + 1
-		if down >= 2 then
-			self:Unschedule(TankThrow)
-			timerThrow:Cancel()
-			warnThrowSoon:Cancel()
-			DBM.BossHealth:Hide()
-			enrageTimer:Start()
+function mod:SPELL_CAST_SUCCESS(args)
+	if args.spellId == 9250651 then -- Chain Lightning (Frostmourne custom)
+		timerChainLightningCD:Start()
+	end
+end
+
+function mod:SPELL_AURA_APPLIED(args)
+	if args.spellId == 45185 then
+		if not args:IsPlayer() then
+			specWarnStomp:Show(args.destName)
+			specWarnStomp:Play("tauntboss")
 		end
+	end
+end
+
+function mod:CHAT_MSG_MONSTER_YELL(msg, npc)
+	if msg and msg:find("Maximum power", 1, true) then
+		-- Frostmourne logs 2026-10-06 (two pulls): after this yell Thaddius heals to full and never casts Polarity Shift again
+		self.vb.noShift = true
+		timerNextShift:Stop()
+		warnShiftSoon:Cancel()
+	elseif npc == L.name and self.vb.phase ~= 2 then
+		self:SendSync("P2")
+	end
+end
+
+function mod:OnSync(msg)
+	if msg == "P2" then
+		self:Unschedule(TankThrow)
+		timerThrow:Cancel()
+		warnThrowSoon:Cancel()
+		DBM.BossHealth:Hide()
+		enrageTimer:Start()
+		self:SetStage(2)
+		-- Frostmourne logs 2026-10-06 (two pulls): first Chain Lightning 14s and first Polarity Shift 15s after Thaddius' first yell
+		timerChainLightningCD:Start(14)
+		timerNextShift:Start(15)
+		warnShiftSoon:Schedule(10)
 	end
 end
 

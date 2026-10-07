@@ -5,9 +5,8 @@ local select, tContains = select, tContains
 local PickupInventoryItem, PutItemInBackpack, UseEquipmentSet, CancelUnitBuff = PickupInventoryItem, PutItemInBackpack, UseEquipmentSet, CancelUnitBuff
 local UnitClass = UnitClass
 
-mod:SetRevision("20260205235940")
+mod:SetRevision("20221030130154")
 mod:SetCreatureID(15990)
-mod:SetEncounterID(1114)
 mod:SetModelID("creature/lich/lich.m2")
 mod:SetMinCombatTime(60)
 mod:SetUsedIcons(1, 2, 3, 4, 5, 6, 7, 8)
@@ -17,12 +16,13 @@ mod:RegisterCombat("combat_yell", L.Yell)
 mod:RegisterEventsInCombat(
 	"SPELL_AURA_APPLIED 27808 27819 28410",
 	"SPELL_AURA_REMOVED 28410",
-	"SPELL_CAST_SUCCESS 27810 27819 27808 28410",
+	"SPELL_CAST_SUCCESS 27810 27819 27808 28410 9250681 9250717",
+	"SPELL_CAST_START 55802 9250679",
+	"CHAT_MSG_RAID_BOSS_EMOTE",
 	"CHAT_MSG_MONSTER_YELL",
-	"UNIT_HEALTH boss1"
+	"UNIT_DIED",
+	"UNIT_HEALTH_UNFILTERED" -- have to do unfiltered because Zidras doesn't feel like fixing his stuff
 )
-
-local specWarnWeapons		= mod:NewSpecialWarning("WeaponsStatus", false)
 
 local warnAddsSoon			= mod:NewAnnounce("warnAddsSoon", 1, "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01")
 local warnPhase2			= mod:NewPhaseAnnounce(2, 3)
@@ -31,7 +31,6 @@ local warnFissure			= mod:NewTargetNoFilterAnnounce(27810, 4)
 local warnMana				= mod:NewTargetAnnounce(27819, 2)
 local warnChainsTargets		= mod:NewTargetNoFilterAnnounce(28410, 4)
 local warnMindControlSoon	= mod:NewSoonAnnounce(28410, 4)
-local warnPhase3			= mod:NewPhaseAnnounce(3, 3)
 
 local specwarnP2Soon		= mod:NewSpecialWarning("specwarnP2Soon")
 local specWarnManaBomb		= mod:NewSpecialWarningMoveAway(27819, nil, nil, nil, 1, 2)
@@ -41,16 +40,40 @@ local specWarnBlast			= mod:NewSpecialWarningTarget(27808, "Healer", nil, nil, 1
 local specWarnFissureYou	= mod:NewSpecialWarningYou(27810, nil, nil, nil, 3, 2)
 local specWarnFissureClose	= mod:NewSpecialWarningClose(27810, nil, nil, nil, 2, 8)
 local yellFissure			= mod:NewYellMe(27810)
-local specWarnAddsGuardians	= mod:NewSpecialWarningAdds(29897, "-Healer", nil, nil, 1, 2) -- "Guardians of Icecrown. There's no spellID for this, so used something close: Guardians of Icecrown Passive"
+local specWarnKickGroups	= mod:NewSpecialWarningInterrupt(55802, "HasInterrupt", "KickGroups", nil, 1, 2)
 
 local blastTimer			= mod:NewBuffActiveTimer(4, 27808, nil, nil, nil, 5, nil, DBM_COMMON_L.HEALER_ICON)
-local timerManaBomb			= mod:NewVarTimer("v25-54.87", 27819, nil, nil, nil, 3, nil, nil, true) -- REVIEW! ~30s variance! [25.20-54.87]. Added "keep" arg. SPELL_CAST_SUCCESS: (Lordaeron: 25m [2025-10-03]@[20:37:12] || Onyxia: 25m [2026-02-04]@[22:18:26]) - "Detonate Mana-27819-npc:15990-3 = pull:293.74/[Stage 1/0.00, Stage 2/227.95] 65.79/293.74, Stage 3/24.38, 6.88/31.26, 30.34, 25.20" || "Detonate Mana-27819-npc:15990-3 = pull:261.18/[Stage 1/0.00, Stage 2/227.99] 33.20/261.18, 54.87, Stage 3/5.24, 24.93/30.17, 27.27"
-local timerFrostBlast		= mod:NewVarTimer("v34.75-42.67", 27808, nil, nil, nil, 3, nil, DBM_COMMON_L.DEADLY_ICON, true) -- REVIEW! ~8s variance [34.75-42.67]. Added "keep" arg. SPELL_CAST_SUCCESS: (Lordaeron: 25m [2025-10-03]@[20:37:12] || Onyxia: 25m [2026-02-04]@[22:18:26]) - "Frost Blast-27808-npc:15990-3 = pull:308.71/[Stage 1/0.00, Stage 2/227.95] 80.76/308.71, Stage 3/9.41, 33.25/42.67, 35.25" || "Frost Blast-27808-npc:15990-3 = pull:268.87/[Stage 1/0.00, Stage 2/227.99] 40.89/268.87, 34.75, Stage 3/17.67, 17.85/35.52, 41.90",
+local timerManaBomb			= mod:NewCDTimer(20, 27819, nil, nil, nil, 3)
+local timerFrostBlast		= mod:NewCDTimer(45, 27808, nil, nil, nil, 3, nil, DBM_COMMON_L.DEADLY_ICON)
 local timerFissure			= mod:NewTargetTimer(5, 27810, nil, nil, 2, 3)
-local timerFissureCD 		= mod:NewVarTimer("v16.78-34.57", 27810, nil, nil, nil, 3, nil, nil, true) -- REVIEW! ~17s variance [16.78-34.57]. Added "keep" arg. SPELL_CAST_SUCCESS: (Lordaeron: 25m [2025-10-03]@[20:37:12] || Onyxia: 25m [2026-02-04]@[22:18:26]) - "Shadow Fissure-27810-npc:15990-3 = pull:250.56/[Stage 1/0.00, Stage 2/227.95] 22.60/250.56, 16.78, 29.41, Stage 3/21.38, 0.02/21.39, 27.82, 17.65" || "Shadow Fissure-27810-npc:15990-3 = pull:250.88/[Stage 1/0.00, Stage 2/227.99] 22.90/250.88, 34.56, 34.57, Stage 3/1.28, 25.01/26.29, 29.42"
+local timerFissureCD 		= mod:NewCDTimer(25, 27810, nil, nil, nil, 3) -- Frostmourne logs 2026-10-06: 25.0-34.6 (was 15)
 local timerMC				= mod:NewBuffActiveTimer(20, 28410, nil, nil, nil, 3)
-local timerMCCD				= mod:NewCDTimer(90, 28410, nil, nil, nil, 3) -- Almost no variance. SPELL_CAST_SUCCESS: (Lordaeron: 25m [2025-10-03]@[20:37:12]) - "Chains of Kel'Thuzad-28410-npc:15990-3 = pull:258.01/[Stage 1/0.00, Stage 2/227.95] 30.06/258.01, 0.00, 0.00, Stage 3/60.11, 29.93/90.04, 0.00"
-local timerPhase2			= mod:NewTimer(228, "TimerPhase2", nil, nil, nil, 6) -- P2 script starts on Yell or Emote, and IEEU fires 0.55s after. (25m Lordaeron 2022/10/16) - 228.0
+local timerMCCD				= mod:NewCDTimer(90, 28410, nil, nil, nil, 3)
+local timerPhase2			= mod:NewTimer(228, "TimerPhase2", nil, nil, nil, 6)
+
+-- Frostmourne custom
+local warnPhase3			= mod:NewPhaseAnnounce(3, 3)
+local warnFreezingBlast		= mod:NewTargetNoFilterAnnounce(9250720, 4)
+local specWarnPhylactery	= mod:NewSpecialWarning("SpecWarnPhylactery", nil, nil, nil, 1, 2)
+local specWarnCooldowns		= mod:NewSpecialWarning("SpecWarnRotateCDs", nil, nil, nil, 1, 2)
+local specWarnFreezingBlast	= mod:NewSpecialWarningYou(9250720, nil, nil, nil, 3, 2)
+local yellFreezingBlast		= mod:NewYellMe(9250720)
+local timerFrostboltVolley	= mod:NewCDTimer(20, 9250681, nil, nil, nil, 2) -- 15.0, then every 20.0-28
+local timerFreezingBlastCD	= mod:NewCDTimer(15, 9250720, nil, nil, nil, 3) -- phase 3 only: every 15.1 (sometimes 16.7, or one skipped)
+local timerCooldowns		= mod:NewTimer(24, "TimerRotateCDs", 9250717, nil, nil, 5)
+
+specWarnKickGroups:SetText("Group %d")
+DBM:GetModLocalization("Kel'Thuzad"):SetOptionLocalization({
+	KickGroups			= "Voice announcement for $spell:55802 interrupt groups",
+	SpecWarnPhylactery	= "Show special warning when the Phylactery phase starts",
+	SpecWarnRotateCDs	= "Show special warning to start rotating cooldowns (24s into the Phylactery phase)",
+	TimerRotateCDs		= "Show timer until cooldowns should be rotated in the Phylactery phase",
+})
+DBM:GetModLocalization("Kel'Thuzad"):SetWarningLocalization({
+	SpecWarnPhylactery	= "Phylactery phase - kill the Phylactery!",
+	SpecWarnRotateCDs	= "Start rotating cooldowns!",
+})
+DBM:GetModLocalization("Kel'Thuzad"):SetTimerLocalization({TimerRotateCDs = "Rotate cooldowns"})
 
 mod:AddRangeFrameOption(12, 27819)
 mod:AddSetIconOption("SetIconOnMC", 28410, true, false, {1, 2, 3})
@@ -58,18 +81,10 @@ mod:AddSetIconOption("SetIconOnManaBomb", 27819, false, false, {8})
 mod:AddSetIconOption("SetIconOnFrostTomb", 27808, true, false, {1, 2, 3, 4, 5, 6, 7, 8})
 mod:AddDropdownOption("RemoveBuffsOnMC", {"Never", "Gift", "CCFree", "ShortOffensiveProcs", "MostOffensiveBuffs"}, "Never", "misc", nil, 28410)
 
-mod.vb.warnedAdds = false
-mod.vb.MCIcon = 1
-local frostBlastTargets = {}
-local chainsTargets = {}
-
-local playerClass = select(2, UnitClass("player"))
-local isHunter = playerClass == "HUNTER"
-
 local RaidWarningFrame = RaidWarningFrame
 local GetFramesRegisteredForEvent, RaidNotice_AddMessage = GetFramesRegisteredForEvent, RaidNotice_AddMessage
 local function selfWarnMissingSet()
-	if (mod.Options.EqUneqWeaponsKT or mod.Options.EqUneqWeaponsKT2) and not mod:IsEquipmentSetAvailable("pve") then
+	if mod.Options.EqUneqWeaponsKT and not mod:IsEquipmentSetAvailable("pve") then
 		for i = 1, select("#", GetFramesRegisteredForEvent("CHAT_MSG_RAID_WARNING")) do
 			local frame = select(i, GetFramesRegisteredForEvent("CHAT_MSG_RAID_WARNING"))
 			if frame.AddMessage then
@@ -81,12 +96,11 @@ local function selfWarnMissingSet()
 end
 
 mod:AddMiscLine(L.EqUneqLineDescription)
-mod:AddBoolOption("EqUneqWeaponsKT", false) -- automation by timer
-mod:AddBoolOption("EqUneqWeaponsKT2", mod:IsDps(), nil, selfWarnMissingSet) -- automation by event
-mod:AddDropdownOption("EqUneqFilter", {"OnlyDPS", "DPSTank", "NoFilter"}, "OnlyDPS", "misc")
+mod:AddBoolOption("EqUneqWeaponsKT", mod:IsDps(), nil, selfWarnMissingSet)
+mod:AddBoolOption("EqUneqWeaponsKT2")
 
 local function selfSchedWarnMissingSet(self)
-	if (self.Options.EqUneqWeaponsKT or self.Options.EqUneqWeaponsKT2) and not self:IsEquipmentSetAvailable("pve") then
+	if self.Options.EqUneqWeaponsKT and not self:IsEquipmentSetAvailable("pve") then
 		for i = 1, select("#", GetFramesRegisteredForEvent("CHAT_MSG_RAID_WARNING")) do
 			local frame = select(i, GetFramesRegisteredForEvent("CHAT_MSG_RAID_WARNING"))
 			if frame.AddMessage then
@@ -98,39 +112,36 @@ local function selfSchedWarnMissingSet(self)
 end
 mod:Schedule(0.5, selfSchedWarnMissingSet, mod) -- mod options default values were being read before SV ones, so delay this
 
-local function checkWeaponRemovalSetting(self)
-	if (not self.Options.EqUneqWeaponsKT and not self.Options.EqUneqWeaponsKT2) then return false end
-
-	local removalOption = self.Options.EqUneqFilter
-	if removalOption == "OnlyDPS" and self:IsDps() then return true
-	elseif removalOption == "DPSTank" and not self:IsHealer() then return true
-	elseif removalOption == "NoFilter" then return true
-	end
-	return false
-end
+mod.vb.nextWarnAdds = 0.75
+mod.vb.addPeriod = 0.25
+mod.vb.MCIcon = 1
+mod.vb.phylactery = false
+local frostBlastTargets = {}
+local chainsTargets = {}
+local isHunter = select(2, UnitClass("player")) == "HUNTER"
+local playerClass = select(2, UnitClass("player"))
+local nextGroup = 1
 
 local function UnWKT(self)
-	if self:IsEquipmentSetAvailable("pve") then
+	if (self.Options.EqUneqWeaponsKT or self.Options.EqUneqWeaponsKT2) and self:IsEquipmentSetAvailable("pve") then
 		PickupInventoryItem(16)
 		PutItemInBackpack()
 		PickupInventoryItem(17)
 		PutItemInBackpack()
-		DBM:Debug("MH and OH unequipped", 2)
+		DBM:Debug("MH and OH unequipped",2)
 		if isHunter then
 			PickupInventoryItem(18)
 			PutItemInBackpack()
-			DBM:Debug("Ranged unequipped", 2)
+			DBM:Debug("Ranged unequipped",2)
 		end
 	end
 end
 
 local function EqWKT(self)
-	if self:IsEquipmentSetAvailable("pve") then
-		DBM:Debug("trying to equip pve")
+	if (self.Options.EqUneqWeaponsKT or self.Options.EqUneqWeaponsKT2) and self:IsEquipmentSetAvailable("pve") then
+		DBM:Debug("trying to equip pve",1)
 		UseEquipmentSet("pve")
-		if not self:IsTank() then
-			CancelUnitBuff("player", (GetSpellInfo(25780))) -- Righteous Fury
-		end
+		CancelUnitBuff("player", (GetSpellInfo(25780))) -- Righteous Fury
 	end
 end
 
@@ -211,18 +222,16 @@ end
 
 local function AnnounceChainsTargets(self)
 	warnChainsTargets:Show(table.concat(chainsTargets, "< >"))
-	if self.Options.EqUneqWeaponsKT and checkWeaponRemovalSetting(self) then
-		if not tContains(chainsTargets, UnitName("player")) then
-			DBM:Debug("Equipping scheduled", 2)
-			self:Schedule(1.0, EqWKT, self)
-			self:Schedule(2.0, EqWKT, self)
-			self:Schedule(3.6, EqWKT, self)
-			self:Schedule(5.0, EqWKT, self)
-			self:Schedule(6.0, EqWKT, self)
-			self:Schedule(8.0, EqWKT, self)
-			self:Schedule(10.0, EqWKT, self)
-			self:Schedule(12.0, EqWKT, self)
-		end
+	if (not tContains(chainsTargets, UnitName("player")) and self.Options.EqUneqWeaponsKT and self:IsDps()) then
+		DBM:Debug("Equipping scheduled",2)
+		self:Schedule(1.0, EqWKT, self)
+		self:Schedule(2.0, EqWKT, self)
+		self:Schedule(3.6, EqWKT, self)
+		self:Schedule(5.0, EqWKT, self)
+		self:Schedule(6.0, EqWKT, self)
+		self:Schedule(8.0, EqWKT, self)
+		self:Schedule(10.0, EqWKT, self)
+		self:Schedule(12.0, EqWKT, self)
 	end
 	table.wipe(chainsTargets)
 	self.vb.MCIcon = 1
@@ -244,41 +253,89 @@ local function AnnounceBlastTargets(self)
 	end
 end
 
-local function StartPhase2(self)
-	if self.vb.phase == 1 then
-		self:SetStage(2)
-		warnPhase2:Show()
-		warnPhase2:Play("ptwo")
-		timerManaBomb:Start("v33.2-35.02") -- REVIEW!
-		timerFrostBlast:Start("v40.89-44.52") -- REVIEW!
-		timerFissureCD:Start("v22.6-22.9") -- REVIEW!
-		if self:IsDifficulty("normal25") then
-			timerMCCD:Start(30)
-			warnMindControlSoon:Schedule(25)
-			specWarnWeapons:Show(checkWeaponRemovalSetting(self) and ENABLE or ADDON_DISABLED, (self.Options.EqUneqWeaponsKT2 and self.Options.EqUneqWeaponsKT and (SLASH_STOPWATCH2):sub(2)) or (self.Options.EqUneqWeaponsKT2 and COMBAT_LOG) or NONE, self.Options.EqUneqFilter)
-			if self.Options.EqUneqWeaponsKT and checkWeaponRemovalSetting(self) then
-				self:Schedule(29.95, UnWKT, self)
-				self:Schedule(30, UnWKT, self)
-			end
-		end
-		if self.Options.RangeFrame then
-			DBM.RangeCheck:Show(12)
-		end
+-- Frostmourne (logs 2026-10-06, three pulls incl. a 512s kill):
+--   pull          -> phase 2 at once (no phase 1)
+--   "Not yet! My master..." yell (boss health, about 8% in the log) -> Phylactery phase, all spell timers hidden
+--   Phylactery dies -> phase 3, spell timers run again plus Freezing Blast. If it is not killed it is a soft enrage.
+local function StartSpellTimers(self, fissure, mana, blast, volley)
+	timerFissureCD:Start(fissure)
+	timerManaBomb:Start(mana)
+	timerFrostBlast:Start(blast)
+	timerFrostboltVolley:Start(volley)
+end
+
+local function StopSpellTimers(self)
+	timerFissureCD:Stop()
+	timerManaBomb:Stop()
+	timerFrostBlast:Stop()
+	timerFrostboltVolley:Stop()
+	timerFreezingBlastCD:Stop()
+	timerMCCD:Stop()
+	warnMindControlSoon:Cancel()
+	self:Unschedule(UnWKT)
+end
+
+local function RotateCooldowns(self)
+	if not self.vb.phylactery then return end
+	specWarnCooldowns:Show()
+	specWarnCooldowns:Play("defensive")
+end
+
+local function StartPhylactery(self)
+	if self.vb.phylactery or self.vb.phase == 3 then return end
+	self.vb.phylactery = true
+	StopSpellTimers(self)
+	specWarnPhylactery:Show()
+	specWarnPhylactery:Play("killmob")
+	timerCooldowns:Start()
+	self:Schedule(24, RotateCooldowns, self)
+end
+
+-- Phase 3. Log, counted from the Phylactery's death: Frostbolt volley 17.0, Freezing Blast emote 17.1, Detonate Mana 26.1 (22 in an
+-- earlier pull), Shadow Fissure 26.9, Frost Blast 46.9, Chains 54.3
+local function StartPhase3(self)
+	if self.vb.phase == 3 then return end
+	self.vb.phylactery = false
+	self:SetStage(3)
+	self:Unschedule(RotateCooldowns)
+	timerCooldowns:Stop()
+	warnPhase3:Show()
+	StartSpellTimers(self, 27, 22, 47, 17)
+	timerFreezingBlastCD:Start(17)
+	if self:IsDifficulty("normal25", "heroic25") then
+		timerMCCD:Start(54)
+		warnMindControlSoon:Schedule(49)
 	end
 end
 
 function mod:OnCombatStart(delay)
-	self:SetStage(1)
+	self:SetStage(2) -- Frostmourne: the fight starts in phase 2, no 228s phase 1 timer
+	self.vb.phylactery = false
 	table.wipe(chainsTargets)
 	table.wipe(frostBlastTargets)
-	self.vb.warnedAdds = false
+	if self:IsDifficulty("normal25") then
+		self.vb.nextWarnAdds = 0.75
+		self.vb.addPeriod = 0.25
+	else
+		self.vb.nextWarnAdds = 0.4
+		self.vb.addPeriod = 0.4
+	end
 	self.vb.MCIcon = 1
-	specwarnP2Soon:Schedule(218-delay)
-	timerPhase2:Start()
---	self:Schedule(226, StartPhase2, self)
-	self:RegisterShortTermEvents(
-		"INSTANCE_ENCOUNTER_ENGAGE_UNIT"
-	)
+	nextGroup = 1
+	StartSpellTimers(self, 25 - delay, 20 - delay, 45 - delay, 15 - delay)
+	if self:IsDifficulty("normal25", "heroic25") then
+		-- Frostmourne raid reports as heroic25 and Chains are cast there: first at 55.5 in the log
+		local firstMC = self:IsDifficulty("heroic25") and 55 or 50
+		timerMCCD:Start(firstMC - delay)
+		warnMindControlSoon:Schedule(firstMC - 5 - delay)
+		if self.Options.EqUneqWeaponsKT and self:IsDps() then
+			self:Schedule(firstMC - 2 - delay, UnWKT, self)
+			self:Schedule(firstMC - 1.5 - delay, UnWKT, self)
+		end
+	end
+	if self.Options.RangeFrame then
+		DBM.RangeCheck:Show(12)
+	end
 end
 
 function mod:OnCombatEnd()
@@ -289,9 +346,17 @@ end
 
 function mod:SPELL_CAST_SUCCESS(args)
 	local spellId = args.spellId
-	if spellId == 27810 then
+	if spellId == 9250717 then -- Necrotic Surge, cast by the Phylactery: fallback if the yell was missed
+		StartPhylactery(self)
+	elseif spellId == 9250681 then -- Frostbolt volley (Frostmourne custom)
+		if not self.vb.phylactery then
+			timerFrostboltVolley:Start()
+		end
+	elseif spellId == 27810 then
 		timerFissure:Start(args.destName)
-		timerFissureCD:Start()
+		if not self.vb.phylactery then
+			timerFissureCD:Start()
+		end
 		if args:IsPlayer() then
 			specWarnFissureYou:Show()
 			specWarnFissureYou:Play("targetyou")
@@ -303,30 +368,29 @@ function mod:SPELL_CAST_SUCCESS(args)
 			warnFissure:Show(args.destName)
 			warnFissure:Play("watchstep")
 		end
-	elseif spellId == 28410 then
-		DBM:Debug("MC on "..args.destName, 2)
+	elseif args.spellId == 28410 then
+		DBM:Debug("MC on "..args.destName,2)
 		if args.destName == UnitName("player") then
 			if self.Options.RemoveBuffsOnMC ~= "Never" then
 				RemoveBuffs(self.Options.RemoveBuffsOnMC)
 			end
-			if self.Options.EqUneqWeaponsKT2 and checkWeaponRemovalSetting(self) then
+			if self.Options.EqUneqWeaponsKT2 then
 				UnWKT(self)
-				self:Schedule(0.01, UnWKT, self)
-				DBM:Debug("Unequipping", 2)
+				self:Schedule(0.05, UnWKT, self)
+				DBM:Debug("Unequipping",2)
 			end
 		end
-		if self:AntiSpam(2, 2) then
+		if self:AntiSpam(2, 2) and not self.vb.phylactery then
 			timerMCCD:Start()
-			warnMindControlSoon:Schedule(85)
-			if self.Options.EqUneqWeaponsKT and checkWeaponRemovalSetting(self) then
-				self:Schedule(89.95, UnWKT, self)
-				self:Schedule(90, UnWKT, self)
-			end
 		end
 	elseif spellId == 27819 then
-		timerManaBomb:Start()
+		if not self.vb.phylactery then
+			timerManaBomb:Start()
+		end
 	elseif spellId == 27808 then
-		timerFrostBlast:Start()
+		if not self.vb.phylactery and self:AntiSpam(10, "FrostBlast") then -- cast several times 1s apart
+			timerFrostBlast:Start()
+		end
 	end
 end
 
@@ -354,6 +418,10 @@ function mod:SPELL_AURA_APPLIED(args)
 		chainsTargets[#chainsTargets + 1] = args.destName
 		if self:AntiSpam() then
 			timerMC:Start()
+			if not self.vb.phylactery then
+				timerMCCD:Start()
+				warnMindControlSoon:Schedule(85)
+			end
 		end
 		if self.Options.SetIconOnMC then
 			self:SetIcon(args.destName, self.vb.MCIcon)
@@ -365,6 +433,10 @@ function mod:SPELL_AURA_APPLIED(args)
 		else
 			self:Schedule(1.0, AnnounceChainsTargets, self)
 		end
+		if self.Options.EqUneqWeaponsKT and self:IsDps() then
+			self:Schedule(88.0, UnWKT, self)
+			self:Schedule(88.5, UnWKT, self)
+		end
 	end
 end
 
@@ -373,8 +445,8 @@ function mod:SPELL_AURA_REMOVED(args)
 		if self.Options.SetIconOnMC then
 			self:SetIcon(args.destName, 0)
 		end
-		if (args.destName == UnitName("player") or args:IsPlayer()) and checkWeaponRemovalSetting(self) then
-			DBM:Debug("Equipping scheduled", 2)
+		if (args.destName == UnitName("player") or args:IsPlayer()) and (self.Options.EqUneqWeaponsKT or self.Options.EqUneqWeaponsKT2) and self:IsDps() then
+			DBM:Debug("Equipping scheduled",2)
 			self:Schedule(0.1, EqWKT, self)
 			self:Schedule(1.7, EqWKT, self)
 			self:Schedule(3.7, EqWKT, self)
@@ -385,28 +457,44 @@ function mod:SPELL_AURA_REMOVED(args)
 	end
 end
 
-function mod:CHAT_MSG_MONSTER_YELL(msg)
-	if msg == L.Yell1Phase2 or msg:find(L.Yell1Phase2) or msg == L.Yell2Phase2 or msg:find(L.Yell2Phase2) or msg == L.Yell3Phase2 or msg:find(L.Yell3Phase2) then
-		StartPhase2(self)
-		self:UnregisterShortTermEvents() -- Unregister IEEU
-	elseif msg == L.YellPhase3 or msg:find(L.YellPhase3) then
-		self:SetStage(3)
-		warnPhase3:Show()
-	elseif msg == L.YellGuardians or msg:find(L.YellGuardians) then
-		specWarnAddsGuardians:Show()
+function mod:SPELL_CAST_START(args)
+	if args:IsSpellID(55802, 9250679) and self.Options.KickGroups then -- Frostbolt (9250679: Frostmourne custom)
+		specWarnKickGroups:Play("count\\"..nextGroup)
+		specWarnKickGroups:Show(nextGroup, "")
+		nextGroup = nextGroup%2+1
 	end
 end
 
-function mod:INSTANCE_ENCOUNTER_ENGAGE_UNIT() -- Keeping this just in case one of the YellPhase2 Localizations is wrong
-	if UnitExists("boss1") and self:GetUnitCreatureId("boss1") == 15990 then
-		StartPhase2(self)
-		self:UnregisterShortTermEvents()
-	end
-end
-
-function mod:UNIT_HEALTH(uId)
-	if not self.vb.warnedAdds and self:GetUnitCreatureId(uId) == 15990 and UnitHealth(uId) / UnitHealthMax(uId) <= 0.48 then
-		self.vb.warnedAdds = true
+function mod:UNIT_HEALTH_UNFILTERED(uId)
+	if uId == "boss1" and self.vb.nextWarnAdds > 0 and self:GetUnitCreatureId(uId) == 15990 and UnitHealth(uId) / UnitHealthMax(uId) <= self.vb.nextWarnAdds+0.02 then
+		self.vb.nextWarnAdds = self.vb.nextWarnAdds - self.vb.addPeriod
 		warnAddsSoon:Show()
+	end
+end
+
+function mod:CHAT_MSG_RAID_BOSS_EMOTE(msg)
+	if not msg then return end
+	local target = msg:match("aims Freezing Blast at (.+)!") -- "Kel'Thuzad aims Freezing Blast at <name>!", 1.5s before the cast
+	if target then
+		timerFreezingBlastCD:Start()
+		if target == UnitName("player") then
+			specWarnFreezingBlast:Show()
+			specWarnFreezingBlast:Play("targetyou")
+			yellFreezingBlast:Yell()
+		else
+			warnFreezingBlast:Show(target)
+		end
+	end
+end
+
+function mod:CHAT_MSG_MONSTER_YELL(msg)
+	if msg and msg:find("Not yet! My master", 1, true) then -- start of the Phylactery phase
+		StartPhylactery(self)
+	end
+end
+
+function mod:UNIT_DIED(args)
+	if self:GetCIDFromGUID(args.destGUID) == 900149 then -- Phylactery killed: phase 3
+		StartPhase3(self)
 	end
 end

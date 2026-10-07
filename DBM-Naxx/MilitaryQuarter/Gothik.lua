@@ -1,15 +1,14 @@
 local mod	= DBM:NewMod("Gothik", "DBM-Naxx", 4)
 local L		= mod:GetLocalizedStrings()
 
-mod:SetRevision("20251016221912")
+mod:SetRevision("20220629223621")
 mod:SetCreatureID(16060)
-mod:SetEncounterID(1109)
 
 mod:RegisterCombat("combat")
 
 mod:RegisterEventsInCombat(
-	"CHAT_MSG_MONSTER_YELL",
-	"CHAT_MSG_RAID_BOSS_EMOTE",
+	"SPELL_CAST_SUCCESS 9250700",
+	"SPELL_AURA_APPLIED 9250700",
 	"UNIT_DIED"
 )
 
@@ -19,13 +18,18 @@ local warnWaveNow		= mod:NewAnnounce("WarningWaveSpawned", 3, nil, false)
 local warnWaveSoon		= mod:NewAnnounce("WarningWaveSoon", 2)
 local warnRiderDown		= mod:NewAnnounce("WarningRiderDown", 4)
 local warnKnightDown	= mod:NewAnnounce("WarningKnightDown", 2)
-local warnGateOpen		= mod:NewSpellAnnounce(3366, 2)
 local warnPhase2		= mod:NewPhaseAnnounce(2, 3)
 
-local timerPhase2		= mod:NewTimer(277, "TimerPhase2", 27082, nil, nil, 6)
+local timerPhase2		= mod:NewTimer(270, "TimerPhase2", 27082, nil, nil, 6)
 local timerWave			= mod:NewTimer(20, "TimerWave", 5502, nil, nil, 1)
-local timerGate			= mod:NewTimer(155, "Gate Opens", 9484) -- 235s if raid on 1 side (Lordaeron: 25m [2025-10-03]@[20:52:00]) - "?-The central gate opens!-npc:Gothik the Harvester = pull:234.95/[Stage 1/0.00] 234.95, Stage 2/42.07"
+local timerGate			= mod:NewTimer(150, "Gate Opens", 9484)
+local timerTeleport		= mod:NewTimer(25, "TimerTeleport", 31569)
+local timerSoulConvergence = mod:NewNextTimer(30, 9250700, nil, nil, nil, 2) -- Frostmourne custom, logs 2026-10-06: 30.0, then every 30.0 (two pulls)
 
+mod:SetUsedIcons(1, 2, 3, 4, 5, 6, 7, 8)
+mod:AddSetIconOption("SetIconOnConvergence", 9250700, true, false, {1, 2, 3, 4, 5, 6, 7, 8})
+
+local convergenceIcon = 1
 mod.vb.wave = 0
 local wavesNormal = {
 	{2, L.Trainee, timer = 20},
@@ -72,9 +76,18 @@ local wavesHeroic = {
 
 local waves = wavesNormal
 
+local NextWave -- defined below
+
 local function StartPhase2(self)
 	self:SetStage(2)
-	warnPhase2:Show()
+	self:Unschedule(NextWave) -- no more waves once Gothik is down
+	timerWave:Stop()
+	warnWaveSoon:Cancel()
+	if self:IsDifficulty("normal25") then
+		timerTeleport:Start()
+	else
+		timerTeleport:Start(20)
+	end
 end
 
 local function getWaveString(wave)
@@ -88,7 +101,7 @@ local function getWaveString(wave)
 	end
 end
 
-local function NextWave(self)
+function NextWave(self)
 	self.vb.wave = self.vb.wave + 1
 	warnWaveNow:Show(self.vb.wave, getWaveString(self.vb.wave))
 	local timer = waves[self.vb.wave].timer
@@ -107,12 +120,22 @@ function mod:OnCombatStart()
 		waves = wavesNormal
 	end
 	self.vb.wave = 0
+	-- Frostmourne raid reports as heroic25; logs 2026-10-06: Gothik's first cast at 181.9 in both pulls (was 270)
+	local p2 = self:IsDifficulty("heroic25") and 180 or 270
+	timerSoulConvergence:Start(30)
 	timerGate:Start()
-	timerPhase2:Start()
+	timerPhase2:Start(p2)
+	warnPhase2:Schedule(p2)
 	timerWave:Start(25, self.vb.wave + 1)
 	warnWaveSoon:Schedule(22, self.vb.wave + 1, getWaveString(self.vb.wave + 1))
 	self:Schedule(25, NextWave, self)
---	self:Schedule(277, StartPhase2, self)
+	self:Schedule(p2, StartPhase2, self)
+end
+
+function mod:SPELL_CAST_SUCCESS(args)
+	if args.spellId == 9250700 then -- Soul Convergence (Frostmourne custom)
+		timerSoulConvergence:Start()
+	end
 end
 
 function mod:OnTimerRecovery()
@@ -120,19 +143,6 @@ function mod:OnTimerRecovery()
 		waves = wavesHeroic
 	else
 		waves = wavesNormal
-	end
-end
-
-function mod:CHAT_MSG_MONSTER_YELL(msg)
-	if msg == L.GothikPhase2Yell or msg:find(L.GothikPhase2Yell) then
-		StartPhase2(self)
-	end
-end
-
-function mod:CHAT_MSG_RAID_BOSS_EMOTE(msg)
-	if msg == L.GothikDoorEmote or msg:find(L.GothikDoorEmote) then
-		DBM:AddSpecialEventToTranscriptorLog("Gothik Door Opened")
-		warnGateOpen:Show()
 	end
 end
 
@@ -147,8 +157,14 @@ function mod:UNIT_DIED(args)
 	end
 end
 
---[[function mod:UNIT_SPELLCAST_SUCCEEDED(_, spellName)
-	if (spellName == GetSpellInfo(28025) or spellName == GetSpellInfo(28026)) and self:GetStage(1) then -- Boss casts this teleportation spell, together with Yell: I have waited long enough. Now you face the harvester of souls.
-		self:SetStage(2)
+function mod:SPELL_AURA_APPLIED(args)
+	if args.spellId == 9250700 and self.Options.SetIconOnConvergence then -- Soul Convergence: mark every target of this cast
+		if self:AntiSpam(5, "ConvergenceIcon") then
+			convergenceIcon = 1
+		end
+		if convergenceIcon <= 8 then
+			self:SetIcon(args.destName, convergenceIcon, 8)
+		end
+		convergenceIcon = convergenceIcon + 1
 	end
-end]]
+end

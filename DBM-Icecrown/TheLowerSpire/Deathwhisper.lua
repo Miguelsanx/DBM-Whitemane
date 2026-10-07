@@ -4,12 +4,11 @@ local L		= mod:GetLocalizedStrings()
 local CancelUnitBuff, GetSpellInfo = CancelUnitBuff, GetSpellInfo
 local UnitGUID = UnitGUID
 
-mod:SetRevision("20260730183915")
+mod:SetRevision("20251101165950")
 mod:SetCreatureID(36855)
 mod:SetEncounterID(846)
 mod:SetUsedIcons(1, 2, 3, 7, 8)
-mod:SetHotfixNoticeRev(20260730000000)
-mod:SetMinSyncRevision(20260730000000)
+mod:SetMinSyncRevision(20220905000000)
 
 mod:RegisterCombat("combat")
 
@@ -452,16 +451,15 @@ function mod:SPELL_AURA_REMOVED(args)
 		self:Unschedule(UnW)
 		timerSummonSpiritCD:Start() -- (25H Lordaeron 2022/10/21) - Stage 2/11.0
 		timerTouchInsignificanceCD:Start(6) -- 3.4s variance [6.0-9.4] (25H Lordaeron [2022-09-23]@[20:40:18] || 25H Lordaeron [2022-10-05]@[20:21:27]) - Stage 2/6.0 || Stage 2/9.4
+		timerAdds:Cancel()
 		timerFrostboltVolleyCD:Start("v19-20")
 		warnAddsSoon:Cancel()
-		--[[ Warmane changed add spawn script: https://www.warmane.com/bugtracker/report/134527
-		timerAdds:Cancel()
 		self:Unschedule(addsTimer)
 		if self:IsHeroic() then	-- Edited from retail
 			timerAdds:Start(45)
 			warnAddsSoon:Schedule(40) -- 5 secs prewarning
 			self:Schedule(45, addsTimer, self)
-		end]]
+		end
 		if self.Options.InfoFrame then
 			DBM.InfoFrame:Hide()
 		end

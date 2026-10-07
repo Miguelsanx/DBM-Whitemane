@@ -4,11 +4,11 @@ local L		= mod:GetLocalizedStrings()
 local UnitGUID, UnitName, GetSpellInfo = UnitGUID, UnitName, GetSpellInfo
 local UnitInRange, UnitIsUnit, UnitInVehicle, IsInRaid = UnitInRange, UnitIsUnit, UnitInVehicle, DBM.IsInRaid
 
-mod:SetRevision("20260807230359")
+mod:SetRevision("20251102144322")
 mod:SetCreatureID(36597)
 mod:SetEncounterID(856)
 mod:SetUsedIcons(1, 2, 3, 4, 5, 6, 7)
-mod:SetHotfixNoticeRev(20260807000000)
+mod:SetHotfixNoticeRev(20250414000000)
 mod:SetMinSyncRevision(20220921000000)
 
 mod:RegisterCombat("combat")
@@ -33,8 +33,8 @@ mod:RegisterEventsInCombat(
 	"UNIT_AURA_UNFILTERED",
 	"UNIT_DIED",
 --	"UNIT_SPELLCAST_START boss1",
---	"UNIT_SPELLCAST_SUCCEEDED" -- unfiltered as of 14/04/2025, since Warmane broke boss1 units
-	"UNIT_SPELLCAST_SUCCEEDED boss1"
+	"UNIT_SPELLCAST_SUCCEEDED" -- unfiltered as of 14/04/2025, since Warmane broke boss1 units
+--	"UNIT_SPELLCAST_SUCCEEDED boss1"
 )
 
 -- switching to faster less cpu wasting UNIT_TARGET scanning method is not reliable, since this event only fires for LK if is target/focus. Such approach would require syncs to minimize risk of not catching the mechanic, with the downside of the performance gain being questionable
@@ -204,8 +204,6 @@ local warnedValkyrGUIDs = {}
 local valkyrTargets = {}
 local plagueHop = DBM:GetSpellInfo(70338)--Hop spellID only, not cast one.
 -- local soulshriek = GetSpellInfo(69242)
-local spellnameSummonValkyr = DBM:GetSpellInfo(69037) -- Summon Val'kyr (10N)
-local spellnameSummonValkyrPeriodic = DBM:GetSpellInfo(74361) -- Summon Val'kyr Periodic (10H, 25N, 25H)
 local plagueExpires = {}
 local grabIcon = 2
 --	local lastValk = 0
@@ -842,20 +840,13 @@ end
 function mod:UNIT_SPELLCAST_SUCCEEDED(_, spellName)
 --	if spellName == soulshriek and mod:LatencyCheck() then
 --		self:SendSync("SoulShriek", UnitGUID(uId))
-	if (spellName == spellnameSummonValkyrPeriodic or spellName == spellnameSummonValkyr) and self:AntiSpam(5, 4) then -- Summon Val'kyr Periodic (10H, 25N, 25H) | Summon Val'kyr (10N)
+	if (spellName == GetSpellInfo(74361) or spellName == GetSpellInfo(69037)) and self:AntiSpam(5, 4) then -- Summon Val'kyr Periodic (10H, 25N, 25H) | Summon Val'kyr (10N)
 		table.wipe(valkyrTargets)	-- reset valkyr cache for next round
 		grabIcon = 2
 		self.vb.valkIcon = 2
 		self.vb.valkyrWaveCount = self.vb.valkyrWaveCount + 1
 		warnSummonValkyr:Show(self.vb.valkyrWaveCount)
 		timerSummonValkyr:Start(nil, self.vb.valkyrWaveCount+1)
-		--[[2026/08/07: Warmane fixed SPELL_SUMMON, so workaround is no longer needed. Leaving this commented out in case it breaks again.
-		if self.Options.ShowFrame then
-			self:CreateFrame()
-		end
-		if self.Options.ValkyrIcon then
-			self:ScanForMobs(36609, 1, self.vb.valkIcon, 3, nil, 12, "ValkyrIcon") -- 36609 is CID for Val'kyr Shadowguard
-		end]]
 	--[[
 	elseif spellName == GetSpellInfo(73654) then -- Harvest Souls (Heroic)
 		specWarnHarvestSouls:Show()

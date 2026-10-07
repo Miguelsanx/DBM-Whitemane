@@ -1,9 +1,12 @@
 local mod	= DBM:NewMod("Grobbulus", "DBM-Naxx", 2)
 local L		= mod:GetLocalizedStrings()
 
-mod:SetRevision("20250929220131")
+local ml = DBM:GetModLocalization("Grobbulus")
+ml:SetOptionLocalization({SpecWarnManySlimes="Show special warning when 3 or more Fallout Slimes are alive"})
+ml:SetWarningLocalization({SpecWarnManySlimes="|TInterface\\Icons\\spell_nature_abolishmagic:12:12|t %d Slimes! %s |TInterface\\Icons\\spell_nature_abolishmagic:12:12|t"})
+
+mod:SetRevision("20221016191326")
 mod:SetCreatureID(15931)
-mod:SetEncounterID(1111)
 mod:SetUsedIcons(1, 2, 3, 4)
 
 mod:RegisterCombat("combat")
@@ -11,8 +14,14 @@ mod:RegisterCombat("combat")
 mod:RegisterEventsInCombat(
 	"SPELL_AURA_APPLIED 28169",
 	"SPELL_AURA_REMOVED 28169",
-	"SPELL_CAST_SUCCESS 28240 28157 54364"
+	"SPELL_SUMMON 28240",
+	"SPELL_DAMAGE 54363 28241",
+	"SPELL_CAST_SUCCESS 54367 28156 9250647 9250639",
+	"CHAT_MSG_RAID_BOSS_EMOTE",
+	"UNIT_DIED"
 )
+
+local emote_Spray = "Grobbulus sprays slime across the room!"
 
 local warnInjection			= mod:NewTargetNoFilterAnnounce(28169, 2)
 local warnCloud				= mod:NewSpellAnnounce(28240, 2)
@@ -20,17 +29,20 @@ local warnSlimeSprayNow		= mod:NewSpellAnnounce(54364, 2)
 local warnSlimeSpraySoon	= mod:NewSoonAnnounce(54364, 1)
 
 local specWarnInjection		= mod:NewSpecialWarningYou(28169, nil, nil, nil, 1, 2)
+local specWarnCloud			= mod:NewSpecialWarningKeepMove(28240, "Tank", nil, nil, 1, 2)
+local specWarnCloudGTFO		= mod:NewSpecialWarningGTFO(28240, "-Tank", nil, nil, 1, 2)
+local specWarnManySlimes	= mod:NewSpecialWarning("SpecWarnManySlimes", nil, nil, nil, 1, 2)
 local yellInjection			= mod:NewYellMe(28169, nil, false)
 
 local timerInjection		= mod:NewTargetTimer(10, 28169, nil, nil, nil, 3)
 local timerCloud			= mod:NewNextTimer(15, 28240, nil, nil, nil, 5, nil, DBM_COMMON_L.TANK_ICON)
-local timerSlimeSprayCD		= mod:NewCDTimer(32, 54364, nil, nil, nil, 2) -- Transcriptor snippet below
-local enrageTimer			= mod:NewBerserkTimer(720)
+local timerSlimeSprayCD		= mod:NewCDTimer(15, 54364, nil, nil, nil, 2)
+local enrageTimer			= mod:NewBerserkTimer(480)
 
 mod:AddSetIconOption("SetIconOnInjectionTarget", 28169, false, false, {1, 2, 3, 4})
 
-mod.vb.slimeSprays = 1
 local mutateIcons = {}
+local slimesAlive = 0
 
 local function addIcon(self)
 	for i,j in ipairs(mutateIcons) do
@@ -49,12 +61,23 @@ local function removeIcon(self, target)
 	addIcon(self)
 end
 
+function mod:ManySlimes()
+	if self:IsHealer() then
+		specWarnManySlimes:Show(slimesAlive, "Heal hard!")
+		specWarnManySlimes:Play("healall")
+	else
+		specWarnManySlimes:Show(slimesAlive, "Focus Slimes!")
+		specWarnManySlimes:Play("killmob")
+	end
+end
+
 function mod:OnCombatStart(delay)
-	self.vb.slimeSprays = 1
+	slimesAlive = 0
 	table.wipe(mutateIcons)
 	enrageTimer:Start(-delay)
-	warnSlimeSpraySoon:Schedule(27)
-	timerSlimeSprayCD:Start(31) -- REVIEW! variance? (25man Lordaeron 2022/10/16) - 31.0
+	warnSlimeSpraySoon:Schedule(5)
+	timerSlimeSprayCD:Start(10)
+	timerCloud:Start(15)
 end
 
 function mod:OnCombatEnd()
@@ -88,20 +111,65 @@ function mod:SPELL_AURA_REMOVED(args)
 	end
 end
 
-function mod:SPELL_CAST_SUCCESS(args)
-	if args.spellId == 28240 then
+function mod:SPELL_SUMMON(args)
+	if args.spellId == 28240 and args:GetSrcCreatureID() == 15931 then -- Poison Cloud. injecion being removed casts the same spell
 		warnCloud:Show()
 		timerCloud:Start()
-	elseif args:IsSpellID(28157, 54364) then
-		warnSlimeSprayNow:Show()
-		self.vb.slimeSprays = self.vb.slimeSprays + 1
-		 -- REVIEW! variance? (25man Lordaeron 2022/10/16) - pull:31.0, 27.7, 61.1, 25.5
-		if self.vb.slimeSprays % 2 == 0 then -- every 2/4/6... spray short cd
-			warnSlimeSpraySoon:Schedule(20.5)
-			timerSlimeSprayCD:Start(25.5)
-		else -- every 3/5/7... spray long cd
-			warnSlimeSpraySoon:Schedule(54)
-			timerSlimeSprayCD:Start(59)
+		if self.Options.SpecWarn28240keepmove and self:IsTanking("player", "boss1", nil, true) then
+			specWarnCloud:Show()
+			specWarnCloud:Play("moveboss")
 		end
+	end
+end
+
+function mod:SPELL_DAMAGE(_,_,_, destGUID, _,_,spellId)
+	if (spellId == 54363 or spellId == 28241) and self.Options.SpecWarn28240gtfo and destGUID == UnitGUID("player") and self:AntiSpam(1, "Cloud") then -- Poison Cloud damage
+		specWarnCloudGTFO:Show("Cloud")
+		specWarnCloudGTFO:Play("watchfeet")
+	end
+end
+
+function mod:SPELL_CAST_SUCCESS(args)
+	if args.spellId == 9250639 then -- Slime Spray (Frostmourne custom): trigger from the cast, the emote stays as fallback
+		self:SlimeSpray()
+	elseif args:IsSpellID(54367, 28156) or (args.spellId == 9250647 and args:GetSrcCreatureID() == 16290) then -- Fallout Slime casts Disease Cloud when it spawns (9250647: Frostmourne custom, also used by trash slimes)
+		slimesAlive = slimesAlive + 1
+		if slimesAlive >= 3 and self.Options.SpecWarnManySlimes and self:AntiSpam(1, "Slime")then
+			self:ScheduleMethod(0.2, "ManySlimes")
+		end
+	end
+end
+
+function mod:CHAT_MSG_RAID_BOSS_EMOTE(msg)
+	if msg == emote_Spray or msg:find(emote_Spray) then -- Slime Spray
+		self:SendSync("Spray") -- Syncing to help unlocalized clients
+	end
+end
+
+function mod:UNIT_DIED(args)
+	if self:GetCIDFromGUID(args.destGUID) == 16290 then -- Fallout Slime
+		slimesAlive = slimesAlive > 1 and slimesAlive - 1 or 0
+		if slimesAlive < 3 then
+			self:UnscheduleMethod("ManySlimes") -- in case a slime died right after new one spawned
+		end
+	end
+end
+
+function mod:SlimeSpray()
+	if not self:AntiSpam(5, "Spray") then return end -- cast and emote both report the same spray
+	warnSlimeSprayNow:Show()
+
+	if self:IsDifficulty("normal25") then
+		warnSlimeSpraySoon:Schedule(10)
+		timerSlimeSprayCD:Start(15)
+	else
+		warnSlimeSpraySoon:Schedule(15)
+		timerSlimeSprayCD:Start(20)
+	end
+end
+
+function mod:OnSync(msg)
+	if msg == "Spray" then
+		self:SlimeSpray()
 	end
 end
