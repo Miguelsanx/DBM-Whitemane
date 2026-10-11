@@ -7,10 +7,10 @@ mod:SetCreatureID(15956)
 mod:RegisterCombat("combat_yell", L.Pull1, L.Pull2)
 
 mod:RegisterEventsInCombat(
-	"SPELL_CAST_START 28783 56090 28785 54021 9250583",
+	"SPELL_CAST_START 28783 56090 28785 54021 9250583 9250582 9250578",
 	"SPELL_CAST_SUCCESS 56090 9250579",
-	"SPELL_AURA_APPLIED 9250685",
-	"SPELL_AURA_REMOVED 28785 54021 9250583 9250581"
+	"SPELL_AURA_APPLIED 9250685 9250684",
+	"SPELL_AURA_REMOVED 28785 54021 9250583 9250581 9250582 9250580"
 )
 
 local warningLocustSoon		= mod:NewSoonAnnounce(28785, 2)
@@ -40,7 +40,7 @@ function mod:OnCombatEnd(wipe)
 end
 
 function mod:SPELL_CAST_START(args)
-	if args:IsSpellID(28783, 56090, 9250579) then  -- Impale (9250579: Frostmourne custom, cast by a trigger NPC every 20s)
+	if args:IsSpellID(28783, 56090, 9250579, 9250578) then -- 9250578: 10-man  -- Impale (9250579: Frostmourne custom, cast by a trigger NPC every 20s)
 		timerImpale:Start()
 		if args.destName then
 			warnImpale:Show(args.destName)
@@ -48,7 +48,7 @@ function mod:SPELL_CAST_START(args)
 				yellImpale:Yell()
 			end
 		end
-	elseif args:IsSpellID(28785, 54021, 9250583) then  -- Locust Swarm (9250583: Frostmourne custom)
+	elseif args:IsSpellID(28785, 54021, 9250583, 9250582) then -- 9250582: 10-man  -- Locust Swarm (9250583: Frostmourne custom)
 		specialWarningLocust:Show()
 		specialWarningLocust:Play("aesoon")
 		timerLocustIn:Stop()
@@ -63,14 +63,14 @@ end
 mod.SPELL_CAST_SUCCESS = mod.SPELL_CAST_START
 
 function mod:SPELL_AURA_APPLIED(args)
-	if args.spellId == 9250685 and args:IsPlayer() and self:AntiSpam(3, "CarrionWake") then -- Carrion Wake (Frostmourne custom)
+	if args:IsSpellID(9250685, 9250684) and args:IsPlayer() and self:AntiSpam(3, "CarrionWake") then -- Carrion Wake (Frostmourne custom)
 		specWarnCarrionWake:Show(args.spellName)
 		specWarnCarrionWake:Play("watchfeet")
 	end
 end
 
 function mod:SPELL_AURA_REMOVED(args)
-	if args:IsSpellID(28785, 54021, 9250583, 9250581)
+	if args:IsSpellID(28785, 54021, 9250583, 9250581, 9250582, 9250580)
 	and args.auraType == "BUFF" and self:AntiSpam(10, "LocustFade") then
 		warningLocustFaded:Show()
 		timerLocustIn:Start()

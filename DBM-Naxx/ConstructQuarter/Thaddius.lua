@@ -9,7 +9,7 @@ mod:RegisterCombat("combat_yell", L.Yell)
 
 mod:RegisterEventsInCombat(
 	"SPELL_CAST_START 28089",
-	"SPELL_CAST_SUCCESS 9250651",
+	"SPELL_CAST_SUCCESS 9250651 9250650",
 	"SPELL_AURA_APPLIED 45185",
 	"CHAT_MSG_MONSTER_YELL",
 	"UNIT_AURA player"
@@ -126,7 +126,7 @@ do
 end
 
 function mod:SPELL_CAST_SUCCESS(args)
-	if args.spellId == 9250651 then -- Chain Lightning (Frostmourne custom)
+	if args.spellId == 9250651 or args.spellId == 9250650 then -- Chain Lightning (Frostmourne custom; 9250650: 10-man)
 		timerChainLightningCD:Start()
 	end
 end

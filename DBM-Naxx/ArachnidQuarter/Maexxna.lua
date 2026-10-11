@@ -6,8 +6,8 @@ mod:SetCreatureID(15952)
 mod:RegisterCombat("combat")
 
 mod:RegisterEventsInCombat(
-	"SPELL_AURA_APPLIED 28622 29484 54125 9250574",
-	"SPELL_CAST_SUCCESS 9250576",
+	"SPELL_AURA_APPLIED 28622 29484 54125 9250574 9250573 9250571 9250572 9250577",
+	"SPELL_CAST_SUCCESS 9250576 9250575",
 	"CHAT_MSG_RAID_BOSS_EMOTE"
 )
 
@@ -18,6 +18,7 @@ local warnWebSprayNow	= mod:NewSpellAnnounce(29484, 3)
 local warnSpidersSoon	= mod:NewAnnounce("WarningSpidersSoon", 2, 17332)
 local warnSpidersNow	= mod:NewAnnounce("WarningSpidersNow", 4, 17332)
 local warnPoisonShock	= mod:NewSpellAnnounce(9250576, 2) -- Frostmourne custom
+local timerSecretion	= mod:NewNextTimer(40, 9250577, nil, nil, nil, 2) -- Frostmourne custom, raid-wide: 20, then every 40 (10 and 25)
 
 local specWarnWebWrap	= mod:NewSpecialWarningSwitch(28622, "RangedDps", nil, nil, 1, 2)
 local yellWebWrap		= mod:NewYellMe(28622)
@@ -33,9 +34,16 @@ function mod:OnCombatStart(delay)
 	warnWebSpraySoon:Schedule(35 - delay)
 	timerWebSpray:Start(40 - delay)
 	timerPoisonShockCD:Start(10 - delay)
-	timerWebWrap:Start(15 - delay)
-	warnSpidersSoon:Schedule(20.2 - delay)
-	timerSpider:Start(25.2 - delay)
+	if self:IsDifficulty("heroic10", "heroic25") then -- logs 2026-10-06/08, 10 and 25: Web Wrap 20 then every 40, spiderlings 30 then every 40
+		timerWebWrap:Start(20 - delay)
+		warnSpidersSoon:Schedule(25 - delay)
+		timerSpider:Start(30 - delay)
+		timerSecretion:Start(20 - delay)
+	else
+		timerWebWrap:Start(15 - delay)
+		warnSpidersSoon:Schedule(20.2 - delay)
+		timerSpider:Start(25.2 - delay)
+	end
 end
 
 function mod:OnCombatEnd(wipe)
@@ -47,11 +55,13 @@ function mod:OnCombatEnd(wipe)
 end
 
 function mod:SPELL_AURA_APPLIED(args)
-	if args.spellId == 28622 then -- Web Wrap
+	if args:IsSpellID(28622, 9250571, 9250572) then -- Web Wrap (Frostmourne: 9250571 10-man, 9250572 25-man)
 		warnWebWrap:CombinedShow(0.5, args.destName)
 		if self:AntiSpam(3, 1) then
 			specWarnWebWrap:Show()
-			if self:IsDifficulty("normal25") then
+			if self:IsDifficulty("heroic10", "heroic25") then
+				timerWebWrap:Start(40)
+			elseif self:IsDifficulty("normal25") then
 				timerWebWrap:Start()
 			else
 				timerWebWrap:Start(25)
@@ -63,7 +73,9 @@ function mod:SPELL_AURA_APPLIED(args)
 		elseif not DBM:UnitDebuff("player", args.spellName) and self:AntiSpam(3, 2) then
 			specWarnWebWrap:Play("targetchange")
 		end
-	elseif args:IsSpellID(29484, 54125, 9250574) and self:AntiSpam(3, 3) then -- Web Spray (9250574: Frostmourne custom)
+	elseif args.spellId == 9250577 and self:AntiSpam(5, 4) then -- Venomous Secretion
+		timerSecretion:Start()
+	elseif args:IsSpellID(29484, 54125, 9250574, 9250573) and self:AntiSpam(3, 3) then -- Web Spray (9250574: Frostmourne custom)
 		warnWebSprayNow:Show()
 		warnWebSpraySoon:Schedule(35)
 		timerWebSpray:Start()
@@ -71,7 +83,7 @@ function mod:SPELL_AURA_APPLIED(args)
 end
 
 function mod:SPELL_CAST_SUCCESS(args)
-	if args.spellId == 9250576 then -- Poison Shock (Frostmourne custom)
+	if args:IsSpellID(9250576, 9250575) then -- Poison Shock (Frostmourne custom; 9250575: 10-man)
 		warnPoisonShock:Show()
 		timerPoisonShockCD:Start()
 	end
@@ -86,7 +98,12 @@ end
 function mod:OnSync(event)
 	if event == "Spiderlings" then
 		warnSpidersNow:Show()
-		warnSpidersSoon:Schedule(25.2)
-		timerSpider:Start()
+		if self:IsDifficulty("heroic10", "heroic25") then
+			warnSpidersSoon:Schedule(35)
+			timerSpider:Start(40)
+		else
+			warnSpidersSoon:Schedule(25.2)
+			timerSpider:Start()
+		end
 	end
 end

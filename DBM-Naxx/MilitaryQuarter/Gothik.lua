@@ -7,8 +7,8 @@ mod:SetCreatureID(16060)
 mod:RegisterCombat("combat")
 
 mod:RegisterEventsInCombat(
-	"SPELL_CAST_SUCCESS 9250700",
-	"SPELL_AURA_APPLIED 9250700",
+	"SPELL_CAST_SUCCESS 9250700 9250699",
+	"SPELL_AURA_APPLIED 9250700 9250699",
 	"UNIT_DIED"
 )
 
@@ -121,7 +121,7 @@ function mod:OnCombatStart()
 	end
 	self.vb.wave = 0
 	-- Frostmourne raid reports as heroic25; logs 2026-10-06: Gothik's first cast at 181.9 in both pulls (was 270)
-	local p2 = self:IsDifficulty("heroic25") and 180 or 270
+	local p2 = self:IsDifficulty("heroic10", "heroic25") and 180 or 270 -- 10-man log 2026-10-08: also 180
 	timerSoulConvergence:Start(30)
 	timerGate:Start()
 	timerPhase2:Start(p2)
@@ -133,7 +133,7 @@ function mod:OnCombatStart()
 end
 
 function mod:SPELL_CAST_SUCCESS(args)
-	if args.spellId == 9250700 then -- Soul Convergence (Frostmourne custom)
+	if args:IsSpellID(9250700, 9250699) then -- Soul Convergence (Frostmourne custom; 9250699: 10-man)
 		timerSoulConvergence:Start()
 	end
 end
@@ -158,7 +158,7 @@ function mod:UNIT_DIED(args)
 end
 
 function mod:SPELL_AURA_APPLIED(args)
-	if args.spellId == 9250700 and self.Options.SetIconOnConvergence then -- Soul Convergence: mark every target of this cast
+	if args:IsSpellID(9250700, 9250699) and self.Options.SetIconOnConvergence then -- Soul Convergence: mark every target of this cast
 		if self:AntiSpam(5, "ConvergenceIcon") then
 			convergenceIcon = 1
 		end

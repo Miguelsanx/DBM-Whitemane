@@ -15,8 +15,8 @@ mod:SetModelScale(0.1)
 
 mod:RegisterEventsInCombat(
 --	"SPELL_CAST_START 28524",
-	"SPELL_CAST_SUCCESS 28542 55665 28560 55696 55697 9250669 9250675 9250713",
-	"SPELL_AURA_APPLIED 28522 28547 55699 45185 9250677",
+	"SPELL_CAST_SUCCESS 28542 55665 28560 55696 55697 9250669 9250675 9250713 9250668 9250674",
+	"SPELL_AURA_APPLIED 28522 28547 55699 45185 9250677 9250676",
 	"CHAT_MSG_RAID_BOSS_EMOTE",
 	"UNIT_HEALTH_UNFILTERED" -- have to do unfiltered because Zidras doesn't feel like fixing his stuff
 )
@@ -142,7 +142,7 @@ function mod:SPELL_AURA_APPLIED(args)
 			specWarnStomp:Show(args.destName)
 			specWarnStomp:Play("tauntboss")
 		end
-	elseif args:IsSpellID(28547, 55699, 9250677) and args:IsPlayer() and self:AntiSpam(1) then -- 9250677: Chill (Frostmourne custom)
+	elseif args:IsSpellID(28547, 55699, 9250677, 9250676) and args:IsPlayer() and self:AntiSpam(1) then -- 9250677: Chill (Frostmourne custom)
 		specWarnBlizzard:Show(args.spellName)
 		specWarnBlizzard:Play("watchfeet")
 	end	
@@ -150,7 +150,7 @@ end
 
 function mod:SPELL_CAST_SUCCESS(args)
 	local spellId = args.spellId
-	if args:IsSpellID(28542, 55665, 9250669) then -- Life Drain (9250669: Frostmourne custom)
+	if args:IsSpellID(28542, 55665, 9250669, 9250668) then -- 9250668: 10-man -- Life Drain (9250669: Frostmourne custom)
 		warnDrainLifeNow:Show()
 		warnDrainLifeSoon:Schedule(19)
 		timerDrainLife:Start()
@@ -161,7 +161,7 @@ function mod:SPELL_CAST_SUCCESS(args)
 	elseif spellId == 28560 then -- doesn't work on Whitemane PTR. not fixing right now because unimportant
 		--warnBlizzard:Show()
 		--timerBlizzard:Start()
-	elseif args:IsSpellID(55696, 55697, 9250675) then -- Tail Sweep (9250675: Frostmourne custom)
+	elseif args:IsSpellID(55696, 55697, 9250675, 9250674) then -- 9250674: 10-man -- Tail Sweep (9250675: Frostmourne custom)
 		timerTailSweep:Start()
 	elseif spellId == 9250713 then -- Piercing Frost (Frostmourne custom)
 		timerPiercingFrostCD:Start()

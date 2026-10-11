@@ -12,8 +12,8 @@ mod:SetCreatureID(16063, 16064, 16065, 30549)
 mod:RegisterCombat("combat", 16063, 16064, 16065, 30549)
 
 mod:RegisterEventsInCombat(
-	"SPELL_CAST_START 28884 57467 9250623",
-	"SPELL_CAST_SUCCESS 28832 28833 28834 28835 28883 53638 57466 32455 9250631 9250637 28863 57463",
+	"SPELL_CAST_START 28884 57467 9250623 9250622",
+	"SPELL_CAST_SUCCESS 28832 28833 28834 28835 28883 53638 57466 32455 9250631 9250637 28863 57463 9250630 9250636",
 	"SPELL_AURA_APPLIED 29061",
 	"SPELL_AURA_REMOVED 29061",
 	"SPELL_AURA_APPLIED_DOSE 28832 28833 28834 28835",
@@ -77,11 +77,11 @@ function mod:OnCombatStart()
 	timerBaronMark:Start(32)
 	timerThaneMark:Start(32)
 	warnMarkSoon:Schedule(27)
-	if self:IsDifficulty("heroic25") then -- Frostmourne raid reports as heroic25
-		timerMeteorCD:Start(20) -- log: 20.2 / 21.0
-		timerHolyWrathCD:Start(24) -- log: 23.9
-		timerUnholyShadowCD:Start(19)
-		timerVoidZoneCD:Start(23)
+	if self:IsDifficulty("heroic10", "heroic25") then -- first casts, 10 and 25 logs: Meteor 20.2-23.7, Holy Wrath 22.5-23.9, Unholy Shadow 19.1-23.2, Void Zone 22.1-23.1
+		timerMeteorCD:Start(20)
+		timerHolyWrathCD:Start(22)
+		timerUnholyShadowCD:Start(18.5) -- 18.7 in the 10-man log 2026-10-10
+		timerVoidZoneCD:Start(22)
 	else
 		timerMeteorCD:Start(22.3)
 		timerHolyWrathCD:Start(10.1) -- REVIEW! ~2s variance? (25man Lordaeron 2022/10/16 wipe || 25man Lordaeron 2022/10/16 kill) - 12.3 || 10.1
@@ -98,7 +98,7 @@ function mod:OnCombatEnd()
 end
 
 function mod:SPELL_CAST_START(args)
-	if args:IsSpellID(28884, 57467, 9250623) then -- Meteor (9250623: Frostmourne custom)
+	if args:IsSpellID(28884, 57467, 9250623, 9250622) then -- 9250622: 10-man -- Meteor (9250623: Frostmourne custom)
 		warnMeteor:Show()
 		timerMeteorCD:Start()
 --		MeteorCast(self)
@@ -119,7 +119,7 @@ function mod:SPELL_CAST_SUCCESS(args)
 			timerThaneMark:Start()
 		end
 		warnMarkSoon:Schedule(9)
-	elseif spellId == 9250637 then -- Unholy Shadow (Frostmourne custom)
+	elseif spellId == 9250637 or spellId == 9250636 then -- Unholy Shadow (Frostmourne custom; 9250636: 10-man)
 		timerUnholyShadowCD:Start()
 	elseif args:IsSpellID(28863, 57463) then -- Void Zone
 		timerVoidZoneCD:Start()
@@ -130,9 +130,9 @@ function mod:SPELL_CAST_SUCCESS(args)
 		elseif self:CheckNearby(12, args.destName) then
 			warnVoidZone:Show(args.destName)
 		end
-	elseif args:IsSpellID(28883, 53638, 57466, 32455, 9250631) then -- Holy Wrath (9250631: Frostmourne custom)
+	elseif args:IsSpellID(28883, 53638, 57466, 32455, 9250631, 9250630) then -- 9250630: 10-man -- Holy Wrath (9250631: Frostmourne custom)
 		warnHolyWrath:Show(args.destName)
-		if self:IsDifficulty("heroic25") then
+		if self:IsDifficulty("heroic10", "heroic25") then
 			timerHolyWrathCD:Start(15.3) -- Frostmourne log 2026-10-06 (8 casts): 15.2-16.7 between casts
 		else
 			timerHolyWrathCD:Start()

@@ -7,8 +7,8 @@ mod:SetCreatureID(16061)
 mod:RegisterCombat("combat_yell", L.Yell1, L.Yell2, L.Yell3, L.Yell4)
 
 mod:RegisterEventsInCombat(
-	"SPELL_CAST_SUCCESS 55543 29107 29060 29061 9250607 9250609 26613",
-	"SPELL_AURA_APPLIED 605 9250609",
+	"SPELL_CAST_SUCCESS 55543 29107 29060 29061 9250607 9250609 26613 9250606 9250608 9250696",
+	"SPELL_AURA_APPLIED 605 9250609 9250608",
 	"UNIT_DIED"
 )
 
@@ -21,7 +21,8 @@ local timerShout		= mod:NewNextTimer(15, 29107, nil, nil, nil, 2) -- Whitemane P
 local timerTaunt		= mod:NewCDTimer(20, 29060, nil, nil, nil, 5, nil, DBM_COMMON_L.TANK_ICON)
 local timerShieldWall	= mod:NewCDTimer(20, 29061, nil, nil, nil, 5, nil, DBM_COMMON_L.TANK_ICON)
 local timerMindControl	= mod:NewBuffActiveTimer(60, 605, nil, nil, nil, 6)
-local timerKnifeCD		= mod:NewNextTimer(10, 9250609, nil, nil, nil, 3) -- Frostmourne custom, log 2026-10-06: 35.5, then every 10.0-10.1
+local timerKnifeCD		= mod:NewNextTimer(10, 9250609, nil, nil, nil, 3) -- Frostmourne custom: 25-man 35.5 then every 10; 10-man 15.7 then every 25
+local timerDisciplinaryCD = mod:NewNextTimer(15, 9250696, nil, nil, nil, 2) -- 10-man only (in 25-man it comes together with Disrupting Shout): 15.7, then every 15
 local timerUnbalancingCD = mod:NewCDTimer(30, 26613, nil, "Tank|Healer", nil, 5, nil, DBM_COMMON_L.TANK_ICON) -- Frostmourne log 2026-10-06: 29.9 / 60.0 / 90.0
 
 mod:AddRangeFrameOption(12, 9250696) -- Disciplinary Shout (Frostmourne custom)
@@ -29,7 +30,12 @@ mod:AddBoolOption("RangeFrame2", true, "misc") -- second radar (DBM-Range2 addon
 DBM:GetModLocalization("Razuvious"):SetOptionLocalization({RangeFrame2 = "Show second range radar (21 yd) - needs DBM-Range2"})
 
 function mod:OnCombatStart(delay)
-	timerKnifeCD:Start(35.5 - delay)
+	if self:IsDifficulty("heroic10") then -- log 2026-10-08
+		timerKnifeCD:Start(15.5 - delay)
+		timerDisciplinaryCD:Start(15.5 - delay)
+	else
+		timerKnifeCD:Start(35.5 - delay)
+	end
 	timerUnbalancingCD:Start(30 - delay)
 	if self.Options.RangeFrame then
 		DBM.RangeCheck:Show(12)
@@ -57,7 +63,7 @@ end
 
 function mod:SPELL_CAST_SUCCESS(args)
 	local spellId = args.spellId
-	if args:IsSpellID(55543, 29107, 9250607) then  -- Disrupting Shout (9250607: Frostmourne custom)
+	if args:IsSpellID(55543, 29107, 9250607, 9250606) then -- 9250606: 10-man  -- Disrupting Shout (9250607: Frostmourne custom)
 		warnShoutNow:Show()
 		if self:IsDifficulty("normal25", "heroic25") then
 			timerShout:Start()
@@ -71,8 +77,10 @@ function mod:SPELL_CAST_SUCCESS(args)
 	elseif spellId == 29061 and self:AntiSpam(2, 1) then -- ShieldWall
 		timerShieldWall:Start(20, args.sourceGUID)
 		warnShieldWall:Schedule(15)
-	elseif spellId == 9250609 then -- Jagged Knife (Frostmourne custom)
-		timerKnifeCD:Start()
+	elseif spellId == 9250609 or spellId == 9250608 then -- Jagged Knife (Frostmourne custom; 9250608: 10-man)
+		timerKnifeCD:Start(self:IsDifficulty("heroic10") and 25 or 10)
+	elseif spellId == 9250696 and self:IsDifficulty("heroic10") then -- Disciplinary Shout
+		timerDisciplinaryCD:Start()
 	elseif spellId == 26613 then -- Unbalancing Strike
 		timerUnbalancingCD:Start()
 	end
@@ -81,7 +89,7 @@ end
 function mod:SPELL_AURA_APPLIED(args)
 	if args.spellId == 605 and args:IsSrcTypePlayer() then -- Mind Control
 		timerMindControl:Start(nil, args.sourceName)
-	elseif args.spellId == 9250609 then -- Jagged Knife (Frostmourne custom)
+	elseif args:IsSpellID(9250609, 9250608) then -- Jagged Knife (Frostmourne custom)
 		warnKnife:Show(args.destName)
 	end
 end

@@ -9,10 +9,10 @@ mod:SetCreatureID(28860)
 mod:RegisterCombat("yell", L.YellSarthPull)
 
 mod:RegisterEventsInCombat(
-	"SPELL_CAST_START 56908 58956 9250872",
+	"SPELL_CAST_START 56908 58956 9250872 9250871",
 	"SPELL_CAST_SUCCESS 57579 59127",
-	"SPELL_AURA_APPLIED 57491 9250868",
-	"SPELL_AURA_REMOVED 9250868",
+	"SPELL_AURA_APPLIED 57491 9250868 9250867",
+	"SPELL_AURA_REMOVED 9250868 9250867",
 	"SPELL_DAMAGE 59128",
 	"CHAT_MSG_RAID_BOSS_EMOTE",
 	"CHAT_MSG_MONSTER_EMOTE",
@@ -155,7 +155,7 @@ function mod:OnCombatEnd()
 end
 
 function mod:SPELL_CAST_START(args)
-	if args:IsSpellID(56908, 58956, 9250872) then -- Flame breath (9250872: Frostmourne custom, every 20s)
+	if args:IsSpellID(56908, 58956, 9250872, 9250871) then -- 9250871: 10-man -- Flame breath (9250872: Frostmourne custom, every 20s)
 		warnBreathSoon:Schedule(15)
 		timerBreath:Start()
 	end
@@ -182,7 +182,7 @@ function mod:SPELL_AURA_APPLIED(args)
 	if self.Options.AnnounceFails and self.Options.Announce and args.spellId == 57491 and DBM:GetRaidRank() >= 1 and DBM:GetRaidUnitId(args.destName) ~= "none" and args.destName then
 		lastfire[args.destName] = (lastfire[args.destName] or 0) + 1
 		SendChatMessage(L.FireWallOn:format(args.destName), "RAID")
-	elseif args.spellId == 9250868 then -- Twilight Blackout
+	elseif args:IsSpellID(9250868, 9250867) then -- Twilight Blackout (9250867: 10-man, same 50s timing)
 		timerBlackoutCD:Start()
 		timerBlackout:Start(args.destName)
 		if self.Options.SetIconOnBlackout then
@@ -200,7 +200,7 @@ function mod:SPELL_AURA_APPLIED(args)
 end
 
 function mod:SPELL_AURA_REMOVED(args)
-	if args.spellId == 9250868 then -- Twilight Blackout ended (dispelled or expired)
+	if args:IsSpellID(9250868, 9250867) then -- Twilight Blackout ended (dispelled or expired)
 		timerBlackout:Stop(args.destName)
 		if self.Options.SetIconOnBlackout then
 			self:SetIcon(args.destName, 0)

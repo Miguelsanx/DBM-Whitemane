@@ -16,7 +16,7 @@ mod:RegisterEventsInCombat(
 	"SPELL_AURA_APPLIED 60936 57407 70106 9250865",
 	"SPELL_AURA_APPLIED_DOSE 70106",
 	"SPELL_AURA_REMOVED 70106",
-	"SPELL_CAST_START 56505 9250852",
+	"SPELL_CAST_START 56505 9250852 9250851",
 	"SPELL_CAST_SUCCESS 57430",
 	"CHAT_MSG_RAID_BOSS_EMOTE"
 )
@@ -150,7 +150,7 @@ function mod:SPELL_CAST_START(args)
 		specWarnBreath:Play("findshield")
 		timerBreath:Start()
 		timerBreathCD:Start()
-	elseif args.spellId == 9250852 then -- Arcane Breath (Frostmourne custom, phase 1)
+	elseif args:IsSpellID(9250852, 9250851) then -- Arcane Breath (Frostmourne custom, phase 1; 9250851: 10-man)
 		timerArcaneBreathCD:Start()
 	end
 end

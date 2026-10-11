@@ -16,8 +16,8 @@ mod:RegisterCombat("combat_yell", L.Yell)
 mod:RegisterEventsInCombat(
 	"SPELL_AURA_APPLIED 27808 27819 28410",
 	"SPELL_AURA_REMOVED 28410",
-	"SPELL_CAST_SUCCESS 27810 27819 27808 28410 9250681 9250717",
-	"SPELL_CAST_START 55802 9250679",
+	"SPELL_CAST_SUCCESS 27810 27819 27808 28410 9250681 9250717 9250680 9250716",
+	"SPELL_CAST_START 55802 9250679 9250678",
 	"CHAT_MSG_RAID_BOSS_EMOTE",
 	"CHAT_MSG_MONSTER_YELL",
 	"UNIT_DIED",
@@ -346,9 +346,9 @@ end
 
 function mod:SPELL_CAST_SUCCESS(args)
 	local spellId = args.spellId
-	if spellId == 9250717 then -- Necrotic Surge, cast by the Phylactery: fallback if the yell was missed
+	if spellId == 9250717 or spellId == 9250716 then -- 9250716: 10-man -- Necrotic Surge, cast by the Phylactery: fallback if the yell was missed
 		StartPhylactery(self)
-	elseif spellId == 9250681 then -- Frostbolt volley (Frostmourne custom)
+	elseif spellId == 9250681 or spellId == 9250680 then -- 9250680: 10-man -- Frostbolt volley (Frostmourne custom)
 		if not self.vb.phylactery then
 			timerFrostboltVolley:Start()
 		end
@@ -458,7 +458,7 @@ function mod:SPELL_AURA_REMOVED(args)
 end
 
 function mod:SPELL_CAST_START(args)
-	if args:IsSpellID(55802, 9250679) and self.Options.KickGroups then -- Frostbolt (9250679: Frostmourne custom)
+	if args:IsSpellID(55802, 9250679, 9250678) and self.Options.KickGroups then -- Frostbolt (9250679: Frostmourne custom)
 		specWarnKickGroups:Play("count\\"..nextGroup)
 		specWarnKickGroups:Show(nextGroup, "")
 		nextGroup = nextGroup%2+1

@@ -7,8 +7,8 @@ mod:SetCreatureID(15953)
 mod:RegisterCombat("combat_yell", L.Pull)
 
 mod:RegisterEventsInCombat(
-	"SPELL_AURA_APPLIED 28798 54100 28732 54097 28794 54099 9250587",
-	"SPELL_CAST_SUCCESS 28796 54098 9250585 9250587 9250687",
+	"SPELL_AURA_APPLIED 28798 54100 28732 54097 28794 54099 9250587 9250586",
+	"SPELL_CAST_SUCCESS 28796 54098 9250585 9250587 9250687 9250584 9250586 9250686",
 	"UNIT_DIED"
 )
 
@@ -72,18 +72,18 @@ function mod:SPELL_AURA_APPLIED(args)
 		warnEmbraceExpire:Schedule(25)
 		warnEmbraceExpired:Schedule(30)
 		self.vb.enraged = false
-	elseif args:IsSpellID(28794, 54099, 9250587) and args:IsPlayer() then
+	elseif args:IsSpellID(28794, 54099, 9250587, 9250586) and args:IsPlayer() then
 		specWarnGTFO:Show(args.spellName)
 		specWarnGTFO:Play("watchfeet")
 	end
 end
 
 function mod:SPELL_CAST_SUCCESS(args)
-	if args:IsSpellID(28796, 54098, 9250585) then -- Poison Bolt Volley (9250585: Frostmourne custom)
+	if args:IsSpellID(28796, 54098, 9250585, 9250584) then -- 9250584: 10-man -- Poison Bolt Volley (9250585: Frostmourne custom)
 		timerPoisonVolleyCD:Start()
-	elseif args.spellId == 9250587 then -- Rain of Fire (Frostmourne custom)
+	elseif args:IsSpellID(9250587, 9250586) then -- Rain of Fire (Frostmourne custom; 9250586: 10-man)
 		timerRainOfFireCD:Start()
-	elseif args.spellId == 9250687 then -- Vengeful Blight: only Risen Worshippers cast it
+	elseif args:IsSpellID(9250687, 9250686) then -- Vengeful Blight: only Risen Worshippers cast it (9250686: 10-man)
 		if args.sourceGUID and not risenSeen[args.sourceGUID] then
 			risenSeen[args.sourceGUID] = true
 			specWarnRisen:Show()

@@ -1,9 +1,8 @@
 local mod	= DBM:NewMod("Loken", "DBM-Party-WotLK", 6)
 local L		= mod:GetLocalizedStrings()
 
-mod:SetRevision("20250929220131")
+mod:SetRevision("20221004112204")
 mod:SetCreatureID(28923)
-mod:SetEncounterID(561)
 
 mod:RegisterCombat("combat")
 
@@ -21,6 +20,9 @@ local timerAchieve	= mod:NewAchievementTimer(120, 1867)
 function mod:OnCombatStart(delay)
 	if not self:IsDifficulty("normal5") then
 		timerAchieve:Start(-delay)
+	end
+	if self:IsDifficulty("heroic5") then -- Frostmourne logs 2026-10-08/09 (2 pulls): first Lightning Nova at 17.5 / 18.1
+		timerNovaCD:Start(17.5 - delay)
 	end
 end
 

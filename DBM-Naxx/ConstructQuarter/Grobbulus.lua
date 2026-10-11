@@ -16,7 +16,7 @@ mod:RegisterEventsInCombat(
 	"SPELL_AURA_REMOVED 28169",
 	"SPELL_SUMMON 28240",
 	"SPELL_DAMAGE 54363 28241",
-	"SPELL_CAST_SUCCESS 54367 28156 9250647 9250639",
+	"SPELL_CAST_SUCCESS 54367 28156 9250647 9250639 9250646 9250638",
 	"CHAT_MSG_RAID_BOSS_EMOTE",
 	"UNIT_DIED"
 )
@@ -33,6 +33,9 @@ local specWarnCloud			= mod:NewSpecialWarningKeepMove(28240, "Tank", nil, nil, 1
 local specWarnCloudGTFO		= mod:NewSpecialWarningGTFO(28240, "-Tank", nil, nil, 1, 2)
 local specWarnManySlimes	= mod:NewSpecialWarning("SpecWarnManySlimes", nil, nil, nil, 1, 2)
 local yellInjection			= mod:NewYellMe(28169, nil, false)
+local warnBile				= mod:NewTargetNoFilterAnnounce(9250703, 3) -- Volatile Bile (Frostmourne custom), target named by emote
+local specWarnBile			= mod:NewSpecialWarningYou(9250703, nil, nil, nil, 1, 2)
+local timerBileCD			= mod:NewCDTimer(15, 9250703, nil, nil, nil, 3) -- 10-man logs: 25.7, then every 15.0-15.2 (it paused once)
 
 local timerInjection		= mod:NewTargetTimer(10, 28169, nil, nil, nil, 3)
 local timerCloud			= mod:NewNextTimer(15, 28240, nil, nil, nil, 5, nil, DBM_COMMON_L.TANK_ICON)
@@ -78,6 +81,9 @@ function mod:OnCombatStart(delay)
 	warnSlimeSpraySoon:Schedule(5)
 	timerSlimeSprayCD:Start(10)
 	timerCloud:Start(15)
+	if self:IsDifficulty("heroic10") then
+		timerBileCD:Start(25.5)
+	end
 end
 
 function mod:OnCombatEnd()
@@ -130,9 +136,9 @@ function mod:SPELL_DAMAGE(_,_,_, destGUID, _,_,spellId)
 end
 
 function mod:SPELL_CAST_SUCCESS(args)
-	if args.spellId == 9250639 then -- Slime Spray (Frostmourne custom): trigger from the cast, the emote stays as fallback
+	if args.spellId == 9250639 or args.spellId == 9250638 then -- 9250638: 10-man -- Slime Spray (Frostmourne custom): trigger from the cast, the emote stays as fallback
 		self:SlimeSpray()
-	elseif args:IsSpellID(54367, 28156) or (args.spellId == 9250647 and args:GetSrcCreatureID() == 16290) then -- Fallout Slime casts Disease Cloud when it spawns (9250647: Frostmourne custom, also used by trash slimes)
+	elseif args:IsSpellID(54367, 28156) or ((args.spellId == 9250647 or args.spellId == 9250646) and args:GetSrcCreatureID() == 16290) then -- Fallout Slime casts Disease Cloud when it spawns (9250647: Frostmourne custom, also used by trash slimes)
 		slimesAlive = slimesAlive + 1
 		if slimesAlive >= 3 and self.Options.SpecWarnManySlimes and self:AntiSpam(1, "Slime")then
 			self:ScheduleMethod(0.2, "ManySlimes")
@@ -141,6 +147,17 @@ function mod:SPELL_CAST_SUCCESS(args)
 end
 
 function mod:CHAT_MSG_RAID_BOSS_EMOTE(msg)
+	local bileTarget = msg and msg:match("targets (.+) with a Volatile Bile")
+	if bileTarget then
+		timerBileCD:Start()
+		if bileTarget == UnitName("player") then
+			specWarnBile:Show()
+			specWarnBile:Play("targetyou")
+		else
+			warnBile:Show(bileTarget)
+		end
+		return
+	end
 	if msg == emote_Spray or msg:find(emote_Spray) then -- Slime Spray
 		self:SendSync("Spray") -- Syncing to help unlocalized clients
 	end

@@ -7,7 +7,7 @@ mod:SetCreatureID(16011)
 mod:RegisterCombat("combat")--Maybe change to a yell later so pull detection works if you chain pull him from tash gauntlet
 
 mod:RegisterEventsInCombat(
-	"SPELL_CAST_SUCCESS 29204 55052 55593 9250601 9250605",
+	"SPELL_CAST_SUCCESS 29204 55052 55593 9250601 9250605 9250600 9250604",
 	"SPELL_AURA_APPLIED 9250692",
 	"SPELL_AURA_REMOVED 9250692",
 	"SPELL_DAMAGE",
@@ -72,7 +72,7 @@ end
 
 function mod:SPELL_CAST_SUCCESS(args)
 	local spellId = args.spellId
-	if args:IsSpellID(29204, 55052, 9250601) then  -- Inevitable Doom (9250601: Frostmourne custom)
+	if args:IsSpellID(29204, 55052, 9250601, 9250600) then -- 9250600: 10-man  -- Inevitable Doom (9250601: Frostmourne custom)
 		self.vb.doomCounter = self.vb.doomCounter + 1
 		warnDoomNow:Show(self.vb.doomCounter)
 		if self:IsDifficulty("normal25") then
@@ -82,7 +82,7 @@ function mod:SPELL_CAST_SUCCESS(args)
 		else
 			timerDoom:Start(30, self.vb.doomCounter + 1)
 		end
-	elseif spellId == 9250605 then -- Deathbloom
+	elseif spellId == 9250605 or spellId == 9250604 then -- Deathbloom (9250604: 10-man)
 		timerDeathbloom:Start()
 	elseif spellId == 55593 then
 		timerAura:Start()

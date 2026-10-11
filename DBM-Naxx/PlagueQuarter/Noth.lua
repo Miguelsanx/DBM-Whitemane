@@ -9,8 +9,8 @@ mod:SetCreatureID(15954)
 mod:RegisterCombat("combat_yell", L.Pull)
 
 mod:RegisterEvents(
-	"SPELL_CAST_SUCCESS 29213 54835 9250591",
-	"SPELL_AURA_APPLIED 29208 29209 29210 29211 9250589 9250688",
+	"SPELL_CAST_SUCCESS 29213 54835 9250591 9250590",
+	"SPELL_AURA_APPLIED 29208 29209 29210 29211 9250589 9250588 9250688",
 	"SPELL_CAST_START 54890 54891",
 	"CHAT_MSG_RAID_BOSS_EMOTE"
 )
@@ -53,10 +53,10 @@ function mod:OnCombatStart(delay)
 end
 
 function mod:SPELL_CAST_SUCCESS(args)
-	if args:IsSpellID(29213, 54835, 9250591) then -- Curse of the Plaguebringer (9250591: Frostmourne custom)
+	if args:IsSpellID(29213, 54835, 9250591, 9250590) then -- 9250590: 10-man -- Curse of the Plaguebringer (9250591: Frostmourne custom)
 		warnCurse:Show()
 		timerCurseCD:Start()
-		if args.spellId == 9250591 then
+		if args:IsSpellID(9250591, 9250590) then
 			timerWrath:Start()
 		end
 		if self.Options.SpecWarn29213dispel and UnitPowerType("player") == 0 then -- crudely filter out feral druids
@@ -71,7 +71,7 @@ function mod:SPELL_AURA_APPLIED(args)
 		warnBlink:Show()
 		timerBlink:Start()
 		warnBlinkSoon:Schedule(27)
-	elseif args.spellId == 9250589 and self:AntiSpam(3, "Wrath") then -- Wrath of the Plaguebringer (Frostmourne custom)
+	elseif args:IsSpellID(9250589, 9250588) and self:AntiSpam(3, "Wrath") then -- Wrath of the Plaguebringer (Frostmourne custom)
 		timerWrath:Stop()
 		specWarnWrath:Show()
 		specWarnWrath:Play("aesoon")

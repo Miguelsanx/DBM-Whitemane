@@ -1,9 +1,8 @@
 local mod	= DBM:NewMod("IngvarThePlunderer", "DBM-Party-WotLK", 10)
 local L		= mod:GetLocalizedStrings()
 
-mod:SetRevision("20250929220131")
+mod:SetRevision("20220823234921")
 mod:SetCreatureID(23980, 23954)
-mod:SetEncounterID(575)
 mod:SetUsedIcons(8)
 
 mod:RegisterCombat("combat")
@@ -31,7 +30,7 @@ mod:AddSetIconOption("WoeStrikeIcon", 42730, true, false, {8})
 
 function mod:OnCombatStart()
 	self:SetStage(1)
-	timerSmashCD:Start(15)
+	timerSmashCD:Start(self:IsDifficulty("heroic5") and 2 or 15) -- Frostmourne logs (4 pulls): first Smash 2.1-3.7, then every 9.4-12.1
 end
 
 function mod:SPELL_CAST_START(args)
@@ -39,7 +38,7 @@ function mod:SPELL_CAST_START(args)
 		specWarnSmash:Show()
 		specWarnSmash:Play("shockwave")
 		timerSmash:Start()
-		timerSmashCD:Start()
+		timerSmashCD:Start(self:IsDifficulty("heroic5") and 9.4 or nil)
 	elseif args:IsSpellID(42708, 42729, 59708, 59734) then
 		specWarnSpelllock:Show()
 		specWarnSpelllock:Play("stopcast")
