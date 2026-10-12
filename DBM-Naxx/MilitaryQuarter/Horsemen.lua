@@ -41,9 +41,9 @@ local timerMeteorCD				= mod:NewCDTimer(15, 57467, nil, nil, nil, 3, nil, nil, t
 --local timerVoidZoneCD			= mod:NewCDTimer(12.9, 28863, nil, nil, nil, 3)-- 12.9-16
 local timerHolyWrathCD			= mod:NewCDTimer(16, 28883, nil, nil, nil, 3)
 local timerBoneBarrier			= mod:NewTargetTimer(20, 29061, nil, nil, nil, 5)
+local timerVoidZoneCD			= mod:NewCDTimer(16, 28863, nil, nil, nil, 3) -- Frostmourne logs (10 and 25): 16.0-16.7 between casts; starts after the first one
 -- Frostmourne custom (logs 2026-10-06)
 local timerUnholyShadowCD		= mod:NewCDTimer(15, 9250637, nil, nil, nil, 3) -- Baron: 19.1, then every 15.0-15.1
-local timerVoidZoneCD			= mod:NewCDTimer(16.7, 57463, nil, nil, nil, 3) -- Lady: 23.1, then every 16.7
 
 mod:AddRangeFrameOption("12")
 
@@ -77,15 +77,13 @@ function mod:OnCombatStart()
 	timerBaronMark:Start(32)
 	timerThaneMark:Start(32)
 	warnMarkSoon:Schedule(27)
-	if self:IsDifficulty("heroic10", "heroic25") then -- first casts, 10 and 25 logs: Meteor 20.2-23.7, Holy Wrath 22.5-23.9, Unholy Shadow 19.1-23.2, Void Zone 22.1-23.1
+	if self:IsDifficulty("heroic10", "heroic25") then -- first casts, 10 and 25 logs: Meteor 20.2-23.7, Unholy Shadow 18.7-23.2
 		timerMeteorCD:Start(20)
-		timerHolyWrathCD:Start(22)
 		timerUnholyShadowCD:Start(18.5) -- 18.7 in the 10-man log 2026-10-10
-		timerVoidZoneCD:Start(22)
 	else
 		timerMeteorCD:Start(22.3)
-		timerHolyWrathCD:Start(10.1) -- REVIEW! ~2s variance? (25man Lordaeron 2022/10/16 wipe || 25man Lordaeron 2022/10/16 kill) - 12.3 || 10.1
 	end
+	timerHolyWrathCD:Start(10.1) -- REVIEW! ~2s variance? (25man Lordaeron 2022/10/16 wipe || 25man Lordaeron 2022/10/16 kill) - 12.3 || 10.1
 	if self.Options.RangeFrame then
 		DBM.RangeCheck:Show(12)
 	end
@@ -132,11 +130,7 @@ function mod:SPELL_CAST_SUCCESS(args)
 		end
 	elseif args:IsSpellID(28883, 53638, 57466, 32455, 9250631, 9250630) then -- 9250630: 10-man -- Holy Wrath (9250631: Frostmourne custom)
 		warnHolyWrath:Show(args.destName)
-		if self:IsDifficulty("heroic10", "heroic25") then
-			timerHolyWrathCD:Start(15.3) -- Frostmourne log 2026-10-06 (8 casts): 15.2-16.7 between casts
-		else
-			timerHolyWrathCD:Start()
-		end
+		timerHolyWrathCD:Start()
 	end
 end
 

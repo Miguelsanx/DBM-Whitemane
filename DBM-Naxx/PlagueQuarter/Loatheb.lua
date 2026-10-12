@@ -33,6 +33,11 @@ local specWarnVolatile	= mod:NewSpecialWarningYou(9250692, nil, nil, nil, 1, 2)
 local timerDeathbloom	= mod:NewNextTimer(30, 9250605, nil, nil, nil, 2) -- 5.0, then every 30.0
 local timerVolatileCD	= mod:NewNextTimer(15, 9250692, nil, nil, nil, 3) -- Volatile Spores: 15.1, then every 15.1
 local timerVolatile		= mod:NewTargetTimer(10, 9250692, nil, nil, nil, 5) -- explodes when it ends, 10s later
+local yellVolatile		= mod:NewYell(9250692, "Volatile Spore on me! Move to Shroom.")
+
+mod:SetUsedIcons(8, 7)
+mod:AddSetIconOption("SetIconOnVolatile", 9250692, true, false, {8, 7})
+local volatileIcon = 8
 
 mod:AddBoolOption("SporeDamageAlert", false)
 
@@ -123,9 +128,14 @@ function mod:SPELL_AURA_APPLIED(args)
 	if args.spellId == 9250692 then -- Volatile Spores
 		timerVolatileCD:Start()
 		timerVolatile:Start(args.destName)
+		if self.Options.SetIconOnVolatile then -- skull, then cross if a second one is out at the same time
+			self:SetIcon(args.destName, volatileIcon, 10)
+			volatileIcon = volatileIcon == 8 and 7 or 8
+		end
 		if args:IsPlayer() then
 			specWarnVolatile:Show()
 			specWarnVolatile:Play("targetyou")
+			yellVolatile:Yell()
 		else
 			warnVolatile:Show(args.destName)
 		end
@@ -135,5 +145,8 @@ end
 function mod:SPELL_AURA_REMOVED(args)
 	if args.spellId == 9250692 then
 		timerVolatile:Stop(args.destName)
+		if self.Options.SetIconOnVolatile then
+			self:SetIcon(args.destName, 0)
+		end
 	end
 end

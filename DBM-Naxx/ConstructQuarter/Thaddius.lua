@@ -25,7 +25,7 @@ local warnChargeNotChanged	= mod:NewSpecialWarning("WarningChargeNotChanged", fa
 local specWarnStomp			= mod:NewSpecialWarningTaunt(45185, nil, nil, nil, 1, 2)
 local yellShift				= mod:NewShortPosYell(28089, DBM_CORE_L.AUTO_YELL_CUSTOM_POSITION)
 
-local enrageTimer			= mod:NewBerserkTimer(365)
+local enrageTimer			= mod:NewBerserkTimer(540) -- Frostmourne log 2026-10-11 (two 25-man pulls): Berserk 27680 exactly 540s after Thaddius' first yell (was 365)
 local timerNextShift		= mod:NewNextTimer(20, 28089, nil, nil, nil, 2, nil, DBM_COMMON_L.DEADLY_ICON)
 local timerShiftCast		= mod:NewCastTimer(3, 28089, nil, nil, nil, 2)
 local timerChainLightningCD	= mod:NewCDTimer(15, 9250651, nil, nil, nil, 3) -- Frostmourne custom, log 2026-10-06: every 15.0-15.1 in phase 2 (one 24s gap during Tesla Overload)
@@ -34,6 +34,7 @@ local timerThrow			= mod:NewNextTimer(28, 28338, nil, nil, nil, 5, nil, DBM_COMM
 if not DBM.Options.GroupOptionsBySpell then
 	mod:AddMiscLine(DBM_CORE_L.OPTION_CATEGORY_DROPDOWNS)
 end
+mod:AddInfoFrameOption(28089, true) -- phase 2: who has which charge and how many stacks
 mod:AddDropdownOption("ArrowsEnabled", {"Never", "TwoCamp", "ArrowsRightLeft", "ArrowsInverse"}, "Never", "misc", nil, 28089) --not grouping to prevent padding issue (aggravated with ElvUI) and ungrouped dropdown line workaround
 
 mod:SetBossHealthInfo(
@@ -43,6 +44,79 @@ mod:SetBossHealthInfo(
 
 local currentCharge
 
+-- Info frame (phase 2): every raid member's charge (+ / -) and stack count, highest stacks first.
+-- Charges are found by their icon, so the server's custom spell IDs don't matter.
+local ICON_POS, ICON_NEG = "Interface\\Icons\\Spell_ChargePositive", "Interface\\Icons\\Spell_ChargeNegative"
+local chargeLines, chargeSorted, chargeStacks = {}, {}, {}
+
+local function unitCharge(uId)
+	local sign, stacks, extra = nil, 0, false
+	local i = 1
+	while true do
+		local name, _, icon, count = UnitDebuff(uId, i)
+		if not name then break end
+		if icon == ICON_POS or icon == ICON_NEG then
+			local s = icon == ICON_POS and "+" or "-"
+			if (count or 0) > 1 then
+				stacks = math.max(stacks, count)
+			elseif not sign then
+				sign = s
+			else
+				extra = true -- second aura with the same icon = the stacking one with 1 stack
+			end
+			sign = sign or s
+		end
+		i = i + 1
+	end
+	i = 1
+	while true do
+		local name, _, icon, count = UnitBuff(uId, i)
+		if not name then break end
+		if icon == ICON_POS or icon == ICON_NEG then
+			sign = sign or (icon == ICON_POS and "+" or "-")
+			stacks = math.max(stacks, (count and count > 0) and count or 1)
+		end
+		i = i + 1
+	end
+	if stacks == 0 and extra then stacks = 1 end
+	return sign, stacks
+end
+
+local function sortByStacks(a, b)
+	if chargeStacks[a] ~= chargeStacks[b] then
+		return chargeStacks[a] > chargeStacks[b]
+	end
+	return a < b
+end
+
+local function updateChargeInfo()
+	table.wipe(chargeLines)
+	table.wipe(chargeSorted)
+	table.wipe(chargeStacks)
+	for uId in DBM:GetGroupMembers() do
+		if not UnitIsDeadOrGhost(uId) then
+			local sign, stacks = unitCharge(uId)
+			if sign then
+				local name = DBM:GetUnitFullName(uId)
+				if name then
+					chargeLines[name] = ("%s %d"):format(sign, stacks)
+					chargeStacks[name] = stacks
+					chargeSorted[#chargeSorted + 1] = name
+				end
+			end
+		end
+	end
+	table.sort(chargeSorted, sortByStacks)
+	return chargeLines, chargeSorted
+end
+
+local function ShowChargeInfo(self)
+	if self.Options.InfoFrame and not DBM.InfoFrame:IsShown() then
+		DBM.InfoFrame:SetHeader(L.ChargeStacks or "Charge stacks")
+		DBM.InfoFrame:Show(10, "function", updateChargeInfo, false, false)
+	end
+end
+
 local function TankThrow(self)
 	if not self:IsInCombat() or self.vb.phase == 2 then
 		DBM.BossHealth:Hide()
@@ -51,6 +125,12 @@ local function TankThrow(self)
 	timerThrow:Start()
 	warnThrowSoon:Schedule(23)
 	self:Schedule(28, TankThrow, self)
+end
+
+function mod:OnCombatEnd()
+	if self.Options.InfoFrame then
+		DBM.InfoFrame:Hide()
+	end
 end
 
 function mod:OnCombatStart(delay)
@@ -78,6 +158,7 @@ do
 			end
 			timerShiftCast:Start()
 			warnShiftCasting:Show()
+			ShowChargeInfo(self)
 			lastShift = GetTime()
 		end
 	end
@@ -163,6 +244,7 @@ function mod:OnSync(msg)
 		timerChainLightningCD:Start(14)
 		timerNextShift:Start(15)
 		warnShiftSoon:Schedule(10)
+		ShowChargeInfo(self)
 	end
 end
 

@@ -10,7 +10,9 @@ mod:RegisterCombat("combat_yell", L.Pull)
 
 mod:RegisterEvents(
 	"SPELL_CAST_SUCCESS 29213 54835 9250591 9250590",
-	"SPELL_AURA_APPLIED 29208 29209 29210 29211 9250589 9250588 9250688",
+	"SPELL_AURA_APPLIED 29208 29209 29210 29211 9250589 9250588 9250688 9250689 9250690",
+	"SPELL_AURA_REFRESH 9250688 9250689 9250690",
+	"SPELL_AURA_REMOVED 9250688 9250689 9250690",
 	"SPELL_CAST_START 54890 54891",
 	"CHAT_MSG_RAID_BOSS_EMOTE"
 )
@@ -37,7 +39,33 @@ local timerBlink		= mod:NewNextTimer(30, 29208)
 
 mod:SetUsedIcons(1, 2, 3, 4, 5, 6, 7, 8)
 mod:AddSetIconOption("SetIconOnResidue", 9250688, true, false, {8, 7, 6, 5, 4, 3, 2, 1})
-local residueIcon = 8
+-- Plague Residue (Frostmourne custom; 9250688 on the player whose curse was removed, then 9250690 (25) / 9250689 (10)
+-- on the players it spreads to). Not Curse of the Plaguebringer. Every player with the debuff is marked the moment
+-- it lands (skull first, then the next free icon) and unmarked when it fades; 8s safety clear.
+local residueMarks = {}	-- [name] = icon
+local function FreeResidueIcon(self, name)
+	local icon = name and residueMarks[name]
+	if icon then
+		residueMarks[name] = nil
+		self:SetIcon(name, 0)
+	end
+end
+local function MarkResidue(self, name)
+	if not name then return end
+	self:Unschedule(FreeResidueIcon, self, name)
+	if not residueMarks[name] then
+		local used = {}
+		for _, i in pairs(residueMarks) do used[i] = true end
+		local icon
+		for i = 8, 1, -1 do
+			if not used[i] then icon = i break end
+		end
+		if not icon then return end -- all 8 icons in use
+		residueMarks[name] = icon
+		self:SetIcon(name, icon)
+	end
+	self:Schedule(8, FreeResidueIcon, self, name)
+end
 local timerWrath		= mod:NewCastTimer(10, 9250589, nil, nil, nil, 2, nil, DBM_COMMON_L.CURSE_ICON) -- Frostmourne custom, log 2026-10-06: hits 10.0s after a Curse that was not removed
 
 
@@ -75,12 +103,25 @@ function mod:SPELL_AURA_APPLIED(args)
 		timerWrath:Stop()
 		specWarnWrath:Show()
 		specWarnWrath:Play("aesoon")
-	elseif args.spellId == 9250688 and self.Options.SetIconOnResidue then -- Plague Residue (5s, then it spreads): mark the carrier
-		if self:AntiSpam(10, "ResidueIcon") then
-			residueIcon = 8
-		end
-		self:SetIcon(args.destName, residueIcon, 5)
-		residueIcon = residueIcon > 1 and residueIcon - 1 or 8
+	elseif args:IsSpellID(9250688, 9250689, 9250690) and self.Options.SetIconOnResidue and args:IsDestTypePlayer() then -- Plague Residue
+		MarkResidue(self, args.destName)
+	end
+end
+mod.SPELL_AURA_REFRESH = mod.SPELL_AURA_APPLIED
+
+function mod:SPELL_AURA_REMOVED(args)
+	if args:IsSpellID(9250688, 9250689, 9250690) and residueMarks[args.destName] then
+		local name = args.destName
+		-- the 10/25 residue can follow right after 9250688 on the same player: wait a moment before unmarking
+		self:Unschedule(FreeResidueIcon, self, name)
+		self:Schedule(0.5, FreeResidueIcon, self, name)
+	end
+end
+
+function mod:OnCombatEnd()
+	for name in pairs(residueMarks) do
+		self:SetIcon(name, 0)
+		residueMarks[name] = nil
 	end
 end
 

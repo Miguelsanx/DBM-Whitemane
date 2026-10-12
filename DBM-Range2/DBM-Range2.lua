@@ -3,6 +3,11 @@
 --   /range2            hide it (or show it with 10 yards if it is hidden)
 --   /range2 boss       toggle the boss marker (red dot + translucent disc)
 --   /range2 boss x     set the assumed tank-to-boss distance to x yards (default 5)
+--   /range2 melee      toggle the automatic melee radar (opens on every boss pull for melee, closes after the fight)
+--   /range2 melee x    set the melee radar's radius to x yards (default 10)
+-- The radar shows only the main tank and the boss - no other players - so melee can see where to stand.
+--   main tank = whoever the boss is attacking (switches after 1s so short target swaps don't flicker);
+--   if that can't be seen, the raid's assigned Main Tank (raid frame role) is used
 -- Boss mods can use it too:  if DBM.RangeCheck2 then DBM.RangeCheck2:Show(12) end  /  DBM.RangeCheck2:Hide()
 --                            DBM.RangeCheck2:SetBossOffset(8) for bosses with a big hitbox
 -- DBM's own files are not touched. Distances are measured the same way DBM's radar does it (map positions).
@@ -23,6 +28,7 @@ DBM.RangeCheck2 = rc2
 local GetPlayerMapPosition, GetPlayerFacing = GetPlayerMapPosition, GetPlayerFacing
 local UnitExists, UnitIsUnit, UnitIsDeadOrGhost, UnitIsConnected = UnitExists, UnitIsUnit, UnitIsDeadOrGhost, UnitIsConnected
 local UnitClass, UnitName, GetRaidTargetIndex = UnitClass, UnitName, GetRaidTargetIndex
+local GetPartyAssignment = GetPartyAssignment
 local GetNumRaidMembers, GetNumPartyMembers = GetNumRaidMembers, GetNumPartyMembers
 local sin, cos, min, pi2 = math.sin, math.cos, math.min, math.pi * 2
 
@@ -207,8 +213,9 @@ local function refreshActiveIds()
 	return any
 end
 
-local function findBoss()
-	bossUnit, tankUnit = nil, nil
+local rawTank, tankCandidate, candidateSince, lostSince
+
+local function findRawTank()
 	local known = refreshActiveIds()
 	-- with a running DBM encounter only that boss counts; otherwise any boss-level enemy in combat
 	local function matches(u)
@@ -245,15 +252,53 @@ local function findBoss()
 	local tt = found .. "target"
 	if not UnitExists(tt) then return end
 	if UnitIsUnit(tt, "player") then
-		tankUnit = "player"
+		rawTank = "player"
 		return
 	end
 	local num, prefix = groupInfo()
 	for i = 1, num do
 		if UnitIsUnit(tt, prefix .. i) then
-			tankUnit = prefix .. i
+			rawTank = prefix .. i
 			return
 		end
+	end
+end
+
+-- raid role "Main Tank" (set in the raid frame), used when the boss's target can't be read
+local function assignedMainTank()
+	if GetNumRaidMembers() == 0 or not GetPartyAssignment then return end
+	for i = 1, GetNumRaidMembers() do
+		local u = "raid" .. i
+		if GetPartyAssignment("MAINTANK", u) and not UnitIsDeadOrGhost(u) and UnitIsConnected(u) then
+			return UnitIsUnit(u, "player") and "player" or u
+		end
+	end
+end
+
+local function findBoss()
+	bossUnit, rawTank = nil, nil
+	findRawTank()
+	local now = GetTime()
+	local cand = rawTank or assignedMainTank()
+	if not cand then
+		-- keep the last tank for 2s (boss casting, short loss of target)
+		lostSince = lostSince or now
+		if now - lostSince > 2 then
+			tankUnit = nil
+		end
+		return
+	end
+	lostSince = nil
+	if not tankUnit or not UnitExists(tankUnit) or UnitIsDeadOrGhost(tankUnit) then
+		tankUnit, tankCandidate = cand, nil
+	elseif UnitIsUnit(cand, tankUnit) then
+		tankCandidate = nil
+	elseif tankCandidate and UnitIsUnit(cand, tankCandidate) then
+		if now - candidateSince >= 1 then
+			tankUnit, tankCandidate = cand, nil
+		end
+	else
+		tankCandidate, candidateSince = cand, now
 	end
 end
 
@@ -414,57 +459,118 @@ local function update()
 	local rotation = pi2 - (GetPlayerFacing() or 0)
 	local sinTheta, cosTheta = sin(rotation), cos(rotation)
 
-	local raid = GetNumRaidMembers()
-	local num = raid > 0 and raid or GetNumPartyMembers()
-	local prefix = raid > 0 and "raid" or "party"
-	local close, closestRange, closestName = 0, nil, nil
-
-	for i = 1, 40 do
-		local dot = frame.dots[i]
-		local uId = prefix .. i
-		if i <= num and UnitExists(uId) and not UnitIsUnit(uId, "player") and not UnitIsDeadOrGhost(uId) and UnitIsConnected(uId) then
-			local unitX, unitY = GetPlayerMapPosition(uId)
-			if unitX == 0 and unitY == 0 then
-				dot:Hide()
-			else
-				local dx, dy = (unitX - playerX) * mapX, (unitY - playerY) * mapY
-				local range = (dx * dx + dy * dy) ^ 0.5
-				if range < activeRange + 0.5 then
-					close = close + 1
-					if not closestRange or range < closestRange then
-						closestRange, closestName = range, UnitName(uId)
-					end
-				end
-				if range < activeRange * 1.5 then
-					styleDot(dot, uId)
-					dot:ClearAllPoints()
-					dot:SetPoint("CENTER", frame, "CENTER", ((dx * cosTheta) - (-dy * sinTheta)) * pixelsperyard, ((dx * sinTheta) + (-dy * cosTheta)) * pixelsperyard)
-					dot:Show()
-				else
-					dot:Hide()
-				end
-			end
-		else
-			dot:Hide()
-		end
+	-- only the main tank is drawn; all other players are left out
+	for i = 2, 40 do
+		frame.dots[i]:Hide()
 	end
-
+	local dot = frame.dots[1]
 	if UnitIsDeadOrGhost("player") then
 		frame.circle:SetVertexColor(1, 1, 1)
-		frame.inRangeText:Hide()
-	elseif close > 0 then
-		frame.circle:SetVertexColor(1, 0, 0)
-		if close == 1 then
-			frame.inRangeText:SetText(("%s (%0.1f yd)"):format(closestName or "?", closestRange))
-		else
-			frame.inRangeText:SetText(("%d players (%0.1f yd)"):format(close, closestRange))
-		end
-		frame.inRangeText:Show()
 	else
 		frame.circle:SetVertexColor(0, 1, 0)
-		frame.inRangeText:Hide()
 	end
+	local uId = tankUnit
+	if not uId then
+		dot:Hide()
+		frame.inRangeText:SetText("no tank found")
+		frame.inRangeText:Show()
+		return
+	end
+	if UnitIsUnit(uId, "player") then
+		dot:Hide()
+		frame.inRangeText:SetText("you are tanking")
+		frame.inRangeText:Show()
+		return
+	end
+	local unitX, unitY = GetPlayerMapPosition(uId)
+	if not UnitIsConnected(uId) or (unitX == 0 and unitY == 0) then
+		dot:Hide()
+		frame.inRangeText:Hide()
+		return
+	end
+	local dx, dy = (unitX - playerX) * mapX, (unitY - playerY) * mapY
+	local range = (dx * dx + dy * dy) ^ 0.5
+	if range < activeRange * 1.5 then
+		styleDot(dot, uId)
+		dot:ClearAllPoints()
+		dot:SetPoint("CENTER", frame, "CENTER", ((dx * cosTheta) - (-dy * sinTheta)) * pixelsperyard, ((dx * sinTheta) + (-dy * cosTheta)) * pixelsperyard)
+		dot:Show()
+	else
+		dot:Hide()
+	end
+	frame.inRangeText:SetText(("Tank: %s (%0.1f yd)"):format(UnitName(uId) or "?", range))
+	frame.inRangeText:Show()
 end
+
+---------------------------------------------------------------------
+-- Automatic melee radar: every boss pull, melee only
+---------------------------------------------------------------------
+local autoShown = false
+
+function rc2:MeleeAutoOn()
+	return saveDB().meleeAuto ~= false
+end
+
+local function meleeRange()
+	return saveDB().meleeRange or 10
+end
+
+-- 3.3.5 has no spec API: class, plus the talent tree with the most points for hybrids
+local function isMelee()
+	local _, class = UnitClass("player")
+	if class == "WARRIOR" or class == "ROGUE" or class == "DEATHKNIGHT" then
+		return true
+	end
+	local tree = { PALADIN = { [2] = true, [3] = true }, DRUID = { [2] = true }, SHAMAN = { [2] = true } }
+	local melee = tree[class]
+	if not melee then return false end
+	local group = GetActiveTalentGroup and GetActiveTalentGroup() or 1
+	local best, bestPoints = nil, -1
+	for i = 1, 3 do
+		local _, _, points = GetTalentTabInfo(i, false, false, group)
+		if (points or 0) > bestPoints then
+			best, bestPoints = i, points or 0
+		end
+	end
+	return melee[best] or false
+end
+
+local function anyEncounter()
+	for _, mod in ipairs(DBM.Mods or {}) do
+		if mod.inCombat then return true end
+	end
+	return false
+end
+
+if DBM.RegisterCallback then
+	DBM:RegisterCallback("DBM_Pull", function()
+		if not rc2:MeleeAutoOn() or not isMelee() then return end
+		if userShown then return end -- opened by hand with /range2: leave it as it is
+		autoShown = true
+		rc2:Show(meleeRange())
+	end)
+	local function stop()
+		if autoShown then
+			autoShown = false
+			rc2:Hide()
+		end
+	end
+	DBM:RegisterCallback("DBM_Kill", stop)
+	DBM:RegisterCallback("DBM_Wipe", stop)
+end
+
+-- safety close: no DBM encounter running anymore (kill/wipe event missed)
+local autoCheck = CreateFrame("Frame")
+local autoSince = 0
+autoCheck:SetScript("OnUpdate", function(_, elapsed)
+	autoSince = autoSince + elapsed
+	if autoSince < 2 then return end
+	autoSince = 0
+	if autoShown and not anyEncounter() then
+		autoShown = false
+		rc2:Hide()
+	end
+end)
 
 local function onUpdate(self, elapsed)
 	elapsedSince = elapsedSince + elapsed
@@ -532,6 +638,27 @@ SlashCmdList["DBMRANGETWO"] = function(msg)
 				hideBoss(frame)
 			end
 			DBM:AddMsg("Range 2: boss marker " .. (db.bossShow and "on" or "off"))
+		end
+		return
+	end
+	local meleeArg = msg:match("^%s*melee%s*(%S*)")
+	if meleeArg then
+		local db = saveDB()
+		local yards = tonumber(meleeArg)
+		if yards and yards >= 1 and yards <= 200 then
+			db.meleeRange = yards
+			db.meleeAuto = true
+			DBM:AddMsg(("Range 2: melee radar on, %s yd"):format(yards))
+			if autoShown then
+				rc2:Show(yards)
+			end
+		else
+			db.meleeAuto = not rc2:MeleeAutoOn()
+			DBM:AddMsg("Range 2: automatic melee radar on boss pull " .. (db.meleeAuto and "on" or "off"))
+			if not db.meleeAuto and autoShown then
+				autoShown = false
+				rc2:Hide()
+			end
 		end
 		return
 	end

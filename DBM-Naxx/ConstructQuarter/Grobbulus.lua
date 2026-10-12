@@ -7,7 +7,7 @@ ml:SetWarningLocalization({SpecWarnManySlimes="|TInterface\\Icons\\spell_nature_
 
 mod:SetRevision("20221016191326")
 mod:SetCreatureID(15931)
-mod:SetUsedIcons(1, 2, 3, 4)
+mod:SetUsedIcons(1, 2, 3, 4, 8)
 
 mod:RegisterCombat("combat")
 
@@ -16,7 +16,7 @@ mod:RegisterEventsInCombat(
 	"SPELL_AURA_REMOVED 28169",
 	"SPELL_SUMMON 28240",
 	"SPELL_DAMAGE 54363 28241",
-	"SPELL_CAST_SUCCESS 54367 28156 9250647 9250639 9250646 9250638",
+	"SPELL_CAST_SUCCESS 54367 28156 9250647 9250639 9250646 9250638 9250702 9250703",
 	"CHAT_MSG_RAID_BOSS_EMOTE",
 	"UNIT_DIED"
 )
@@ -43,6 +43,15 @@ local timerSlimeSprayCD		= mod:NewCDTimer(15, 54364, nil, nil, nil, 2)
 local enrageTimer			= mod:NewBerserkTimer(480)
 
 mod:AddSetIconOption("SetIconOnInjectionTarget", 28169, false, false, {1, 2, 3, 4})
+mod:AddSetIconOption("SetIconOnBileTarget", 9250703, true, false, {8}) -- Volatile Bile (Frostmourne custom): skull from the emote until 5s after the cast
+
+local bileMarked -- player currently carrying the Volatile Bile skull
+local function ClearBileIcon(self, name)
+	if name and bileMarked == name then
+		self:SetIcon(name, 0)
+		bileMarked = nil
+	end
+end
 
 local mutateIcons = {}
 local slimesAlive = 0
@@ -90,6 +99,10 @@ function mod:OnCombatEnd()
 	for _, j in ipairs(mutateIcons) do
 		self:SetIcon(j, 0)
 	end
+	if bileMarked then
+		self:SetIcon(bileMarked, 0)
+		bileMarked = nil
+	end
 end
 
 function mod:SPELL_AURA_APPLIED(args)
@@ -136,6 +149,13 @@ function mod:SPELL_DAMAGE(_,_,_, destGUID, _,_,spellId)
 end
 
 function mod:SPELL_CAST_SUCCESS(args)
+	if args:IsSpellID(9250702, 9250703) then -- Volatile Bile cast: remove the skull 5s later
+		if bileMarked then
+			self:Unschedule(ClearBileIcon)
+			self:Schedule(5, ClearBileIcon, self, bileMarked)
+		end
+		return
+	end
 	if args.spellId == 9250639 or args.spellId == 9250638 then -- 9250638: 10-man -- Slime Spray (Frostmourne custom): trigger from the cast, the emote stays as fallback
 		self:SlimeSpray()
 	elseif args:IsSpellID(54367, 28156) or ((args.spellId == 9250647 or args.spellId == 9250646) and args:GetSrcCreatureID() == 16290) then -- Fallout Slime casts Disease Cloud when it spawns (9250647: Frostmourne custom, also used by trash slimes)
@@ -150,6 +170,15 @@ function mod:CHAT_MSG_RAID_BOSS_EMOTE(msg)
 	local bileTarget = msg and msg:match("targets (.+) with a Volatile Bile")
 	if bileTarget then
 		timerBileCD:Start()
+		if self.Options.SetIconOnBileTarget then
+			self:Unschedule(ClearBileIcon)
+			if bileMarked and bileMarked ~= bileTarget then
+				self:SetIcon(bileMarked, 0)
+			end
+			bileMarked = bileTarget
+			self:SetIcon(bileTarget, 8)
+			self:Schedule(12, ClearBileIcon, self, bileTarget) -- safety: clear even if the cast is never seen
+		end
 		if bileTarget == UnitName("player") then
 			specWarnBile:Show()
 			specWarnBile:Play("targetyou")
